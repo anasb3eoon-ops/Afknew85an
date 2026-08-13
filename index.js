@@ -11,7 +11,7 @@ const AFK_CHANNEL_ID = process.env.AFK_CHANNEL_ID;
 // دالة للانضمام إلى الروم الصوتي
 const connectToVoice = () => {
     if (!GUILD_ID || !AFK_CHANNEL_ID) {
-        console.error("❌ خطأ: يرجى التأكد من إضافة GUILD_ID و AFK_CHANNEL_ID في متغيرات ريلواي (Railway Variables).");
+        console.error("❌ خطأ: يرجى التأكد من إضافة GUILD_ID و AFK_CHANNEL_ID في متغيرات ريلاي (Railway Variables).");
         return;
     }
 
@@ -29,26 +29,27 @@ const connectToVoice = () => {
             selfMute: true,
             selfDeaf: false
         });
-        console.log(`🔊 تم الدخول إلى روم الـ AFK بنجاح.`);
+        console.log(`🎙️ تم الدخول إلى روم الـ AFK بنجاح.`);
     } catch (error) {
-        console.error("❌ حدث خطأ أثناء الدخول للروم الصوتي:", error);
+        console.error("❌ حدث خطا أثناء الدخول للروم الصوتي:", error);
     }
 };
 
 client.on('ready', async () => {
-    console.log(`✅ تم تسجيل الدخول بنجاح كـ: ${client.user.tag}`);
-    
+    console.log(`✅ تم تسجيل الدخول بنجاح كـ : ${client.user.tag}`);
+
     // الدخول للروم الصوتي عند التشغيل
     connectToVoice();
 });
 
 // ميزة الإعادة التلقائية عند الخروج أو التجميع/السحب
 client.on('voiceStateUpdate', (oldState, newState) => {
-    if (oldState.id !== client.user.id) return;
+    if (oldState.id !== client.user.id)
+    return;
 
     if (newState.channelId !== AFK_CHANNEL_ID) {
         console.log("⚠️ تم رصد تغيير في الروم الصوتي (خروج أو نقل). إرجاع الحساب بعد 3 ثوانٍ...");
-        
+
         setTimeout(() => {
             connectToVoice();
         }, 3000);
