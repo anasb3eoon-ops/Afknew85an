@@ -1,10 +1,9 @@
 require('./keep_alive.js');
 const { Client } = require('discord.js-selfbot-v13');
-const { joinVoiceChannel } = require('@discordjs/voice');
 
 const client = new Client();
 
-// --- التأكد من قراءة المتغيرات وتسجيل أي نقص في الـ Logs ---
+// --- المتغيرات ---
 const token = process.env.token || process.env.TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const AFK_CHANNEL_ID = process.env.AFK_CHANNEL_ID;
@@ -16,42 +15,42 @@ const TASBEEH_RANDOM_CHANNEL_ID = process.env.TASBEEH_RANDOM_CHANNEL_ID;
 if (!token) {
     console.error("❌ [CRITICAL ERROR]: متغير الـ token غير موجود في ريلواي!");
 }
-if (!GUILD_ID || !AFK_CHANNEL_ID) {
-    console.error("❌ [ERROR]: يرجى التأكد من إضافة GUILD_ID و AFK_CHANNEL_ID.");
-}
 
-// دالة للانضمام إلى الروم الصوتي مع تسجيل الأخطاء
-const connectToVoice = () => {
+// --- دالة التأفيك والدخول الصوتي الذكي ---
+const connectToVoiceChannel = async () => {
     try {
         const guild = client.guilds.cache.get(GUILD_ID);
-        if (!guild) {
-            console.log(`⚠️ [VOICE]: لم يتم العثور على السيرفر برقم ID: ${GUILD_ID} حتى الآن، جاري إعادة المحاولة...`);
-            return;
+        if (!guild) return;
+        
+        const channel = guild.channels.cache.get(AFK_CHANNEL_ID);
+        if (channel && channel.type === 'GUILD_STAGE_VOICE' || channel.type === 'GUILD_VOICE') {
+            // استخدام الاتصال الداخلي المباشر للبسلف بوت لتجنب أخطاء حزم النظام
+            await client.ws.send({
+                op: 4,
+                d: {
+                    guild_id: GUILD_ID,
+                    channel_id: AFK_CHANNEL_ID,
+                    self_mute: true,
+                    self_deaf: false
+                }
+            });
+            console.log("🔊 [AFK SUCCESS]: تم التأفيك والدخول إلى الروم الصوتي بنجاح.");
         }
-        joinVoiceChannel({
-            channelId: AFK_CHANNEL_ID,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-            selfMute: true,
-            selfDeaf: false
-        });
-        console.log(`🔊 [VOICE SUCCESS]: تم الدخول إلى روم الـ AFK بنجاح.`);
     } catch (error) {
-        console.error("❌ [VOICE ERROR]: حدث خطأ أثناء محاولة الدخول للروم الصوتي:", error);
+        console.error("❌ [AFK ERROR]: حدث خطأ أثناء محاولة التأفيك الصوتي:", error);
     }
 };
 
 client.on('ready', async () => {
     console.log(`✅ [LOGIN SUCCESS]: تم تسجيل الدخول بنجاح كـ: ${client.user.tag}`);
     
-    // تأخير بسيط لضمان تحميل الكاش للسيرفرات
     setTimeout(() => {
-        connectToVoice();
+        connectToVoiceChannel();
         startSmartRotation();
     }, 5000);
 });
 
-// نظام التناوب الذكي مع طباعة الأخطاء في الـ Logs بدقة
+// --- نظام التناوب الذكي (كل 3 ثواني رسالة) ---
 const startSmartRotation = async () => {
     let economyTimer = 0;
     let tasbeehTimer = 0;
@@ -77,8 +76,6 @@ const startSmartRotation = async () => {
                         });
                         await channel.send(`استغفر الله ${lastNum + 1}`);
                         console.log(`📿 [TASBEEH]: تم إرسال التسبيح برقم ${lastNum + 1}`);
-                    } else {
-                        console.log("⚠️ [WARNING]: روم التسبيح الرئيسي (TASBEEH_CHANNEL_ID) غير موجود أو غير مقروء.");
                     }
                 }
                 tasbeehTimer = Date.now();
@@ -94,8 +91,6 @@ const startSmartRotation = async () => {
                         const randomZikr = azkar[Math.floor(Math.random() * azkar.length)];
                         await channel.send(randomZikr);
                         console.log(`✨ [RANDOM TASBEEH]: تم إرسال (${randomZikr})`);
-                    } else {
-                        console.log("⚠️ [WARNING]: الروم العشوائي للتسبيح غير موجود.");
                     }
                 }
                 randomTasbeehTimer = Date.now();
@@ -127,10 +122,9 @@ const startSmartRotation = async () => {
         } catch (error) {
             console.error("❌ [ROTATION ERROR]: حدث خطأ داخل حلقة الإرسال والتناوب:", error);
         }
-    }, 3000); // كل 3 ثواني
+    }, 3000); // القاعدة الأساسية: حركة كل 3 ثواني
 };
 
-// رصد الأخطاء العامة لكي لا ينطفئ البوت صامتاً
 process.on('unhandledRejection', error => {
     console.error('❌ [UNHANDLED REJECTION]: خطأ غير معالج:', error);
 });
