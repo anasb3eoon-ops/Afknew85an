@@ -4,10 +4,11 @@ const { joinVoiceChannel } = require('@discordjs/voice');
 
 const client = new Client();
 
-// --- الإعدادات من متغيرات البيئة (Railway) ---
+// --- الإعدادات من متغيرات البيئة ورايلواي ---
 const GUILD_ID = process.env.GUILD_ID;
 const AFK_CHANNEL_ID = process.env.AFK_CHANNEL_ID;
 const BANK_BOT_ID = '1497214787493433545'; // آيدي بوت البنك المركزي
+const BANK_CHANNEL_ID = '1497214787493433545'; // آيدي قناة البنك المحددة التي سيتم العمل فيها حصراً
 
 // دالة للانضمام إلى الروم الصوتي والحفاظ على التواجد
 const connectToVoice = () => {
@@ -39,11 +40,11 @@ const connectToVoice = () => {
 // دالة تأخير آمنة
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// المحرك الذكي الحقيقي (يتأقلم مع أوقات الانتظار ولا يرسل رسائل عبثية)
+// المحرك الذكي للعمل حصراً داخل قناة البنك المحددة
 const startSmartFarm = async (channel) => {
-    console.log("🧠 [المحرك الذكي]: بدأ العمل، جاري فحص الرصيد والأوقات...");
+    console.log(`🧠 [المحرك الذكي]: بدأ العمل حصراً في قناة البنك المحددة...`);
     
-    // أول خطوة: فحص الرصيد ووقت الألعاب
+    // أول خطوة: فحص الرصيد ووقت الألعاب في غرفة البنك فقط
     await channel.send('رصيد');
     await sleep(3000);
     await channel.send('وقت');
@@ -51,7 +52,6 @@ const startSmartFarm = async (channel) => {
 
     while (true) {
         try {
-            // نبدأ بالأوامر الأساسية لجمع الكاش من الصفر (بخشيش + راتب)
             console.log("💸 محاولة جمع البخشيش...");
             await channel.send('بخشيش');
             await sleep(4000);
@@ -60,20 +60,16 @@ const startSmartFarm = async (channel) => {
             await channel.send('الراتب');
             await sleep(4000);
 
-            // تجربة الألعاب السريعة لرفع الرصيد
             const randomGames = ['كراش', 'نرد', 'مخاطرة', 'ألوان', 'خمن'];
             const chosenGame = randomGames[Math.floor(Math.random() * randomGames.length)];
             
-            console.log(`🎮 تجربة لعبة سريعة لجمع الفلوس: ${chosenGame}`);
+            console.log(`🎮 تجربة لعبة سريعة: ${chosenGame}`);
             await channel.send(chosenGame);
             await sleep(5000);
 
-            // في حال كانت كل الأوامر بكولداون، البوت يأخذ استراحة ذكية (مثلاً دقيقتين) 
-            // لكي لا يزعج الشات أو يتعرض للحظر، ثم يعيد فحص الوقت تلقائياً.
-            console.log("⏳ [استراحة ذكية]: انتظار قليل لتجنب الكولداون والحظر، ثم إعادة المحاولة...");
-            await sleep(120000); // استراحة دقيقتين قبل الدورة القادمة
+            console.log("⏳ [استراحة ذكية]: انتظار قليل لتجنب الحظر، ثم إعادة المحاولة...");
+            await sleep(120000); // استراحة دقيقتين لتجنب السبام
             
-            // إعادة فحص الوقت لتحديث الذاكرة
             await channel.send('وقت');
             await sleep(4000);
 
@@ -88,27 +84,26 @@ client.on('ready', async () => {
     console.log(`✅ تم تسجيل الدخول بنجاح كـ : ${client.user.tag}`);
     connectToVoice();
 
-    const guild = client.guilds.cache.get(GUILD_ID);
-    if (guild) {
-        const textChannel = guild.channels.cache.find(c => c.type === 'GUILD_TEXT' && c.permissionsFor(client.user).has('SEND_MESSAGES'));
-        if (textChannel) {
-            console.log(`🎯 تم تحديد قناة العمل التلقائي: ${textChannel.name}`);
-            setTimeout(() => startSmartFarm(textChannel), 5000);
-        }
+    // العثور على قناة البنك المحددة بدقة عبر الآيدي الذي أرسلته
+    const bankChannel = client.channels.cache.get(BANK_CHANNEL_ID);
+    if (bankChannel) {
+        console.log(`🎯 تم العثور على قناة البنك بنجاح: ${bankChannel.name}`);
+        setTimeout(() => startSmartFarm(bankChannel), 5000);
+    } else {
+        console.error("❌ لم يتم العثور على قناة البنك! تأكد أن الحساب موجود في السيرفر ولديه صلاحية رؤية هذه القناة.");
     }
 });
 
-// نظام التفاعل السريع مع الألعاب والرواتب (الضغط على الأزرار فور ظهورها)
+// نظام التفاعل السريع مع الألعاب والرواتب في غرفة البنك حصراً
 client.on('messageCreate', async (message) => {
-    if (message.author.id !== BANK_BOT_ID) return;
+    // التأكد أن الرسالة قادمة من بوت البنك وفي القناة المخصصة فقط
+    if (message.author.id !== BANK_BOT_ID || message.channel.id !== BANK_CHANNEL_ID) return;
 
-    // إذا ظهرت أزرار (مثل أزرار الراتب المرتبة، ألعاب الألوان، أو خيارات اللعبة)
     if (message.components && message.components.length > 0) {
-        await sleep(1500); // انتظار بسيط لضمان ظهور الزر بشكل كامل
+        await sleep(1500);
 
         for (const row of message.components) {
             if (row.components && row.components.length > 0) {
-                // اختيار أول زر أو زر عشوائي حسب طبيعة اللعبة للضغط عليه بسرعة
                 const targetButton = row.components[0];
                 
                 if (targetButton && targetButton.customId) {
