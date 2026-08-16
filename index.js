@@ -158,10 +158,8 @@ const startPlanB = async () => {
     
     console.log("🚀 تم بدء تفعيل الخطة باء (كل 2.5 ثانية رسالة)...");
     
-    // إرسال رسالة فورية عند التفعيل
     await sendPlanBMsg();
 
-    // تكرار الرسالة كل 2500 ملي ثانية (ثانيتين ونصف)
     planBInterval = setInterval(async () => {
         if (!isBotRunning || !isChatActive || !isPlanBRunning) return;
         await sendPlanBMsg();
@@ -248,10 +246,19 @@ client.on('ready', async () => {
 
 // --- نظام التحكم والإشعارات ومراقبة المنشن ---
 client.on('messageCreate', async (message) => {
-    // 1. نظام مراقبة المنشن والردود
+    // 1. نظام مراقبة المنشن والردود (معدل وآمن لمنع الأخطاء)
     if (message.author.id !== client.user.id) {
         const isMentioned = message.mentions.has(client.user);
-        const isReplied = message.reference && (await message.channel.messages.fetch(message.reference.messageId).catch(() => null))?.author?.id === client.user.id;
+        let isReplied = false;
+
+        if (message.reference && message.reference.messageId) {
+            try {
+                const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                if (repliedMsg && repliedMsg.author && repliedMsg.author.id === client.user.id) {
+                    isReplied = true;
+                }
+            } catch (e) {}
+        }
 
         if (isMentioned || isReplied) {
             try {
@@ -327,7 +334,6 @@ client.on('messageCreate', async (message) => {
             await message.reply("🔴 تم فصل الصوت وإيقافه.");
         }
     }
-    // تفعيل الخطة باء (كل 2.5 ثانية)
     else if (cmd === 'الخطة باء') {
         if (isPlanBRunning) {
             await message.reply("⚠️ الخطة باء مفعلة مسبقاً!");
@@ -336,7 +342,6 @@ client.on('messageCreate', async (message) => {
         await message.reply(`🚀 جاري تفعيل **الخطة باء** (رسالة كل 2.5 ثانية) في روم النقاط (\`${config.planBChannel}\`)....`);
         startPlanB();
     }
-    // إيقاف الخطة باء
     else if (cmd === 'ايقاف الخطة باء') {
         if (!isPlanBRunning) {
             await message.reply("⚠️ الخطة باء متوقفة أساساً!");
@@ -345,7 +350,6 @@ client.on('messageCreate', async (message) => {
         stopPlanB();
         await message.reply("🛑 تم إيقاف **الخطة باء** بنجاح.");
     }
-    // مسح الرسائل المخصص: مسح [العدد] [الايدي]
     else if (text.startsWith("مسح")) {
         const count = parseInt(parts[1]);
         const targetChannelId = parts[2];
@@ -374,7 +378,7 @@ client.on('messageCreate', async (message) => {
             for (const msg of myMessages) {
                 await msg.delete().catch(() => {});
                 deletedCount++;
-                await wait(1500); // فاصل آمن لمنع الحظر
+                await wait(1500);
             }
 
             await message.reply(`✅ تم بنجاح حذف آخر (${deletedCount}) رسالة من الروم <#${targetChannelId}>.`);
@@ -383,7 +387,6 @@ client.on('messageCreate', async (message) => {
             await message.reply("❌ حدث خطأ أثناء محاولة مسح الرسائل، تأكد من الصلاحيات.");
         }
     }
-    // عرض الحالة والإحصائيات وسجل العمليات
     else if (cmd === 'حالة') {
         await message.reply(`📊 **تقرير الحالة والإحصائيات الشامل:**\n` +
             `- الحالة العامة: ${isBotRunning ? '🟢 يعمل' : '🔴 متوقف'}\n` +
@@ -404,7 +407,6 @@ client.on('messageCreate', async (message) => {
             `- روم الهجوم: \`${config.task4Channel}\` (${config.task4Msg})\n` +
             `- روم الخطة باء: \`${config.planBChannel}\``);
     }
-    // التعديلات الفورية مع الحفظ التلقائي
     else if (text.startsWith("تعديل صوت")) {
         const rawId = text.replace("تعديل صوت", "").trim().replace(/[\[\]]/g, "");
         if (rawId) {
