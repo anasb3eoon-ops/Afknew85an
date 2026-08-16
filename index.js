@@ -12,6 +12,7 @@ let config = {
     guildId: process.env.GUILD_ID,
     afkChannelId: process.env.AFK_CHANNEL_ID || "1496645738086531194",
     controlChannelId: "1538406310327091260",
+    targetGuildId: "1264561928034975775", // السيرفر المخصص للإشعارات فقط
     
     task1Channel: "1507460885583626351",
     task1Msg: "!ذكريات",
@@ -188,30 +189,32 @@ const stopPlanB = () => {
     console.log("🛑 تم إيقاف الخطة باء بنجاح.");
 };
 
-// --- نظام تغيير الحالات والألعاب (Rich Presence) ---
+// --- نظام تحديث الألعاب مع إظهار الأيقونات الرسمية ---
 const setPresenceActivity = (type, name, details = null) => {
     try {
         if (type === 'spotify') {
-            // محاكاة سبوتيفاي بشكل احترافي
             client.user.setPresence({
                 activities: [{
                     name: 'Spotify',
                     type: 'LISTENING',
-                    details: name, // اسم الأغنية (مثلاً: أمل حياتي)
-                    state: details // اسم الفنان (مثلاً: أم كلثوم)
+                    details: name, 
+                    state: details 
                 }],
                 status: 'online'
             });
         } else {
-            // العاب (مثل فالورانت، فورتنايت، إلخ)
-            let activityType = 'PLAYING';
-            if (type === 'streaming') activityType = 'STREAMING';
-            if (type === 'watching') activityType = 'WATCHING';
-            
+            // استخدام التطبيقات الرسمية المتاحة في السيلف بوت لتظهر الصور بشكل صحيح
+            let appId = "367827983903449089"; // افتراضي عام
+            if (name.toLowerCase().includes('valorant')) appId = "782291108640030730";
+            if (name.toLowerCase().includes('fortnite')) appId = "323534496466984960";
+            if (name.toLowerCase().includes('minecraft')) appId = "453478544186523658";
+            if (name.toLowerCase().includes('roblox')) appId = "390403342322302976";
+
             client.user.setPresence({
                 activities: [{
                     name: name,
-                    type: activityType
+                    type: 'PLAYING',
+                    applicationId: appId // لإجبار ديسكورد على جلب الأيقونة الرسمية
                 }],
                 status: 'online'
             });
@@ -264,7 +267,6 @@ client.on('ready', async () => {
     console.log(`✅ تم تسجيل الدخول كـ : ${client.user.tag}`);
     connectToVoice();
     
-    // الحالة الافتراضية عند التشغيل
     setPresenceActivity('game', 'Valorant');
 
     runTask1();
@@ -278,42 +280,41 @@ client.on('ready', async () => {
     scheduleNextTask(runTask4, 26, 34);
 });
 
-// --- نظام التحكم والفلترة الذكية للمنشنات والردود ---
+// --- نظام التحكم والفلترة المخصص للسيرفر المطلوب فقط ---
 client.on('messageCreate', async (message) => {
     
-    // 1. فلتر المنشنات والردود الذكي (للأشخاص فقط وبدون بوتات ولا @everyone)
-    if (message.author.id !== client.user.id && !message.author.bot) {
-        
-        // التحقق من عدم وجود تاغ عام
-        const hasEveryone = message.mentions.everyone;
-        if (!hasEveryone) {
-            const isMentioned = message.mentions.has(client.user);
-            let isReplied = false;
+    // 1. فلتر المنشنات والردود (مخصص لسيرفرك المحدّد فقط 1264561928034975775)
+    if (message.guild && message.guild.id === config.targetGuildId) {
+        if (message.author.id !== client.user.id && !message.author.bot) {
+            const hasEveryone = message.mentions.everyone;
+            if (!hasEveryone) {
+                const isMentioned = message.mentions.has(client.user);
+                let isReplied = false;
 
-            if (message.reference && message.reference.messageId) {
-                try {
-                    const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                    if (repliedMsg && repliedMsg.author && repliedMsg.author.id === client.user.id) {
-                        isReplied = true;
-                    }
-                } catch (e) {}
-            }
+                if (message.reference && message.reference.messageId) {
+                    try {
+                        const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                        if (repliedMsg && repliedMsg.author && repliedMsg.author.id === client.user.id) {
+                            isReplied = true;
+                        }
+                    } catch (e) {}
+                }
 
-            // إذا كان منشن شخصي حقيقي أو رد مباشر على رسالتك
-            if (isMentioned || isReplied) {
-                try {
-                    const controlChannel = await client.channels.fetch(config.controlChannelId);
-                    if (controlChannel && controlChannel.isText()) {
-                        const typeStr = isMentioned ? "🔔 **منشن شخصي جديد!**" : "💬 **رد جديد على رسالتك!**";
-                        await controlChannel.send(
-                            `${typeStr}\n` +
-                            `- **اسم الشخص:** \`${message.author.tag}\` (آيدي: \`${message.author.id}\`)\n` +
-                            `- **الروم:** <#${message.channel.id}>\n` +
-                            `- **الرسالة:** \`${message.content}\``
-                        );
+                if (isMentioned || isReplied) {
+                    try {
+                        const controlChannel = await client.channels.fetch(config.controlChannelId);
+                        if (controlChannel && controlChannel.isText()) {
+                            const typeStr = isMentioned ? "🔔 **منشن شخصي جديد في السيرفر!**" : "💬 **رد جديد على رسالتك في السيرفر!**";
+                            await controlChannel.send(
+                                `${typeStr}\n` +
+                                `- **اسم الشخص:** \`${message.author.tag}\` (آيدي: \`${message.author.id}\`)\n` +
+                                `- **الروم:** <#${message.channel.id}>\n` +
+                                `- **الرسالة:** \`${message.content}\``
+                            );
+                        }
+                    } catch (err) {
+                        console.error("❌ خطأ في إرسال إشعار التاغات:", err);
                     }
-                } catch (err) {
-                    console.error("❌ خطأ في إرسال إشعار التاغات:", err);
                 }
             }
         }
@@ -334,39 +335,47 @@ client.on('messageCreate', async (message) => {
             `🔹 \`الخطة باء\` - تفعيل إرسال نقاط مكثف (كل 2.5 ثانية)\n` +
             `🔹 \`ايقاف الخطة باء\` - إيقاف الخطة باء فوراً\n` +
             `🔹 \`مسح [العدد] [الايدي]\` - مسح آخر رسائلك من روم معين\n` +
-            `🔹 \`حالة الألعاب\` - لعرض قائمة الألعاب والحالات المتاحة للتفعيل 🎮`);
+            `🔹 \`حالة الألعاب\` - لعرض خيارات تغيير الألعاب والأغاني بالمظهر المخصص 🎮`);
     }
     else if (cmd === 'حالة الألعاب' || cmd === 'ألعاب') {
-        await message.reply(`🎮 **قائمة الألعاب والحالات الفخمة للبروفايل:**\n\n` +
-            `استخدم الأوامر التالية لتغيير مظهرك فوراً:\n` +
-            `🔹 \لعبة فالورانت\` -> \`لعبة Valorant\`\n` +
-            `🔹 \`لعبة فورتنايت\` -> \`لعبة Fortnite\`\n` +
-            `🔹 \`لعبة ماينكرافت\` -> \`لعبة Minecraft\`\n` +
-            `🔹 \`لعبة روبلوكس\` -> \`لعبة Roblox\`\n` +
-            `🔹 \`سبوتيفاي أم كلثوم\` -> \`تشغيل أغنية أم كلثوم (أمل حياتي)\`\n` +
-            `🔹 \`سبوتيفاي [اسم الأغنية] - [اسم الفنان]\` -> مخصص بالكامل\n` +
-            `*(مثال: \`سبوتيفاي يامسهرني - أم كلثوم\`)*`);
+        await message.reply(`🎮 **خيارات تخصيص البروفايل (ألعاب وأغاني مخصصة):**\n\n` +
+            `🔸 **للألعاب الجاهزة (مع الأيقونة الرسمية):**\n` +
+            `- \`لعبة فالورانت\`\n` +
+            `- \`لعبة فورتنايت\`\n` +
+            `- \`لعبة ماينكرافت\`\n` +
+            `- \`لعبة روبلوكس\`\n\n` +
+            `🔸 **للعبتك المخصصة (اكتب الاسم الذي تريده):**\n` +
+            `- \`لعبة [اسم اللعبة]\` *(مثال: \`لعبة جاتا سان أندرياس\`)*\n\n` +
+            `🔸 **لأغنية سبوتيفاي مخصصة:**\n` +
+            `- \`سبوتيفاي [اسم الأغنية] - [اسم الفنان]\` *(مثال: \`سبوتيفاي يامسهرني - أم كلثوم\`)*`);
     }
     else if (cmd === 'لعبة فالورانت') {
         setPresenceActivity('game', 'Valorant');
-        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Valorant**");
+        await message.reply("🎮 تم تغيير حالتك إلى: **Playing Valorant** (مع الأيقونة الرسمية)");
     }
     else if (cmd === 'لعبة فورتنايت') {
         setPresenceActivity('game', 'Fortnite');
-        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Fortnite**");
+        await message.reply("🎮 تم تغيير حالتك إلى: **Playing Fortnite** (مع الأيقونة الرسمية)");
     }
     else if (cmd === 'لعبة ماينكرافت') {
         setPresenceActivity('game', 'Minecraft');
-        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Minecraft**");
+        await message.reply("🎮 تم تغيير حالتك إلى: **Playing Minecraft** (مع الأيقونة الرسمية)");
     }
     else if (cmd === 'لعبة روبلوكس') {
         setPresenceActivity('game', 'Roblox');
-        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Roblox**");
+        await message.reply("🎮 تم تغيير حالتك إلى: **Playing Roblox** (مع الأيقونة الرسمية)");
     }
-    else if (cmd === 'سبوتيفاي أم كلثوم' || cmd === 'سبوتيفاي ام كلثوم') {
-        setPresenceActivity('spotify', 'أمل حياتي', 'أم كلثوم');
-        await message.reply("🎵 تم تشغيل سبوتيفاي في بروفايلك: **Listening to أم كلثوم - أمل حياتي**");
+    // خيار كتابة اسم لعبة مخصص من قبلك
+    else if (text.startsWith("لعبة ")) {
+        const customGameName = text.replace("لعبة", "").trim();
+        if (customGameName) {
+            setPresenceActivity('game', customGameName);
+            await message.reply(`🎮 تم تعيين لعبة مخصصة في بروفايلك: **Playing ${customGameName}**`);
+        } else {
+            await message.reply("❌ يرجى كتابة اسم اللعبة بعد الأمر. (مثال: `لعبة GTA V`)");
+        }
     }
+    // خيار كتابة أغنية سبوتيفاي مخصصة من قبلك
     else if (text.startsWith("سبوتيفاي ")) {
         const spotifyArgs = text.replace("سبوتيفاي", "").trim();
         const splitSong = spotifyArgs.split("-");
@@ -374,7 +383,7 @@ client.on('messageCreate', async (message) => {
             const songName = splitSong[0].trim();
             const artistName = splitSong[1].trim();
             setPresenceActivity('spotify', songName, artistName);
-            await message.reply(`🎵 تم تحديث سبوتيفاي: **Listening to ${artistName} - ${songName}**`);
+            await message.reply(`🎵 تم تحديث سبوتيفاي المخصص: **Listening to ${artistName} - ${songName}**`);
         } else {
             await message.reply("❌ الصيغة غير صحيحة. استخدم: `سبوتيفاي اسم الأغنية - اسم الفنان`");
         }
@@ -464,7 +473,7 @@ client.on('messageCreate', async (message) => {
     else if (cmd === 'حالة') {
         await message.reply(`📊 **تقرير الحالة والإحصائيات الشامل:**\n` +
             `- الحالة العامة: ${isBotRunning ? '🟢 يعمل' : '🔴 متوقف'}\n` +
-            `- الكتابة التلقائية: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}\n`+
+            `- الكتابة التلقائية: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}\n` +
             `- الصوت (التافيك): ${isVoiceActive ? '🟢 متصل' : '🔴 مفصول'}\n` +
             `- الخطة باء (كل 2.5 ث): ${isPlanBRunning ? '🟢 نشطة' : '🔴 متوقفة'}\n` +
             `- إجمالي الرسائل المرسلة: \`${stats.totalSent}\` رسالة\n` +
