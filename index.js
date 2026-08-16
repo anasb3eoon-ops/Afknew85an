@@ -97,7 +97,7 @@ const processQueue = async () => {
         } catch (error) {
             console.error(`❌ خطأ في إرسال الرسالة إلى الروم ${task.channelId}:`, error);
         }
-        await wait(3000); // فاصل زمني آمن ضد الباند
+        await wait(3000);
     }
     isProcessingQueue = false;
 };
@@ -151,13 +151,10 @@ const runTask4 = () => {
     stats.task4CountLog++;
 };
 
-// مهمة الخطة باء (كل ثانيتين ونصف رسالة)
 const startPlanB = async () => {
     if (isPlanBRunning) return;
     isPlanBRunning = true;
-    
     console.log("🚀 تم بدء تفعيل الخطة باء (كل 2.5 ثانية رسالة)...");
-    
     await sendPlanBMsg();
 
     planBInterval = setInterval(async () => {
@@ -189,6 +186,40 @@ const stopPlanB = () => {
         planBInterval = null;
     }
     console.log("🛑 تم إيقاف الخطة باء بنجاح.");
+};
+
+// --- نظام تغيير الحالات والألعاب (Rich Presence) ---
+const setPresenceActivity = (type, name, details = null) => {
+    try {
+        if (type === 'spotify') {
+            // محاكاة سبوتيفاي بشكل احترافي
+            client.user.setPresence({
+                activities: [{
+                    name: 'Spotify',
+                    type: 'LISTENING',
+                    details: name, // اسم الأغنية (مثلاً: أمل حياتي)
+                    state: details // اسم الفنان (مثلاً: أم كلثوم)
+                }],
+                status: 'online'
+            });
+        } else {
+            // العاب (مثل فالورانت، فورتنايت، إلخ)
+            let activityType = 'PLAYING';
+            if (type === 'streaming') activityType = 'STREAMING';
+            if (type === 'watching') activityType = 'WATCHING';
+            
+            client.user.setPresence({
+                activities: [{
+                    name: name,
+                    type: activityType
+                }],
+                status: 'online'
+            });
+        }
+        console.log(`🎮 تم تحديث الحالة في البروفايل إلى: ${name}`);
+    } catch (e) {
+        console.error("❌ خطأ في تحديث الحالة:", e);
+    }
 };
 
 // اتصال الصوت مع الحماية
@@ -232,6 +263,9 @@ const scheduleNextTask = (taskFn, minMin, maxMin) => {
 client.on('ready', async () => {
     console.log(`✅ تم تسجيل الدخول كـ : ${client.user.tag}`);
     connectToVoice();
+    
+    // الحالة الافتراضية عند التشغيل
+    setPresenceActivity('game', 'Valorant');
 
     runTask1();
     runTask2();
@@ -244,35 +278,43 @@ client.on('ready', async () => {
     scheduleNextTask(runTask4, 26, 34);
 });
 
-// --- نظام التحكم والإشعارات ومراقبة المنشن ---
+// --- نظام التحكم والفلترة الذكية للمنشنات والردود ---
 client.on('messageCreate', async (message) => {
-    // 1. نظام مراقبة المنشن والردود (معدل وآمن لمنع الأخطاء)
-    if (message.author.id !== client.user.id) {
-        const isMentioned = message.mentions.has(client.user);
-        let isReplied = false;
+    
+    // 1. فلتر المنشنات والردود الذكي (للأشخاص فقط وبدون بوتات ولا @everyone)
+    if (message.author.id !== client.user.id && !message.author.bot) {
+        
+        // التحقق من عدم وجود تاغ عام
+        const hasEveryone = message.mentions.everyone;
+        if (!hasEveryone) {
+            const isMentioned = message.mentions.has(client.user);
+            let isReplied = false;
 
-        if (message.reference && message.reference.messageId) {
-            try {
-                const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                if (repliedMsg && repliedMsg.author && repliedMsg.author.id === client.user.id) {
-                    isReplied = true;
-                }
-            } catch (e) {}
-        }
+            if (message.reference && message.reference.messageId) {
+                try {
+                    const repliedMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                    if (repliedMsg && repliedMsg.author && repliedMsg.author.id === client.user.id) {
+                        isReplied = true;
+                    }
+                } catch (e) {}
+            }
 
-        if (isMentioned || isReplied) {
-            try {
-                const controlChannel = await client.channels.fetch(config.controlChannelId);
-                if (controlChannel && controlChannel.isText()) {
-                    await controlChannel.send(
-                        `🔔 **تنبيه منشن أو رد جديد!**\n` +
-                        `- الشخص: \`${message.author.tag}\` (آيدي: \`${message.author.id}\`)\n` +
-                        `- الروم: <#${message.channel.id}>\n` +
-                        `- الرسالة: \`${message.content}\``
-                    );
+            // إذا كان منشن شخصي حقيقي أو رد مباشر على رسالتك
+            if (isMentioned || isReplied) {
+                try {
+                    const controlChannel = await client.channels.fetch(config.controlChannelId);
+                    if (controlChannel && controlChannel.isText()) {
+                        const typeStr = isMentioned ? "🔔 **منشن شخصي جديد!**" : "💬 **رد جديد على رسالتك!**";
+                        await controlChannel.send(
+                            `${typeStr}\n` +
+                            `- **اسم الشخص:** \`${message.author.tag}\` (آيدي: \`${message.author.id}\`)\n` +
+                            `- **الروم:** <#${message.channel.id}>\n` +
+                            `- **الرسالة:** \`${message.content}\``
+                        );
+                    }
+                } catch (err) {
+                    console.error("❌ خطأ في إرسال إشعار التاغات:", err);
                 }
-            } catch (err) {
-                console.error("❌ خطأ في إرسال إشعار المنشن:", err);
             }
         }
     }
@@ -292,18 +334,50 @@ client.on('messageCreate', async (message) => {
             `🔹 \`الخطة باء\` - تفعيل إرسال نقاط مكثف (كل 2.5 ثانية)\n` +
             `🔹 \`ايقاف الخطة باء\` - إيقاف الخطة باء فوراً\n` +
             `🔹 \`مسح [العدد] [الايدي]\` - مسح آخر رسائلك من روم معين\n` +
-            `🔹 \`تعليمات\` - لمعرفة طريقة تعديل الرومات طيران`);
+            `🔹 \`حالة الألعاب\` - لعرض قائمة الألعاب والحالات المتاحة للتفعيل 🎮`);
     }
-    else if (cmd === 'تعليمات') {
-        await message.reply(`📜 **طريقة تعديل الرومات والرسائل فوراً:**\n` +
-            `🔹 \`تعديل صوت [الايدي]\`\n` +
-            `🔹 \`تعديل روم ذكريات [الايدي]\`\n` +
-            `🔹 \`تعديل ذكريات [النص الجديد]\`\n` +
-            `🔹 \`تعديل روم بخشيش [الايدي]\`\n` +
-            `🔹 \`تعديل بخشيش [النص الجديد]\`\n` +
-            `🔹 \`تعديل روم عمل [الايدي]\`\n` +
-            `🔹 \`تعديل روم هجوم [الايدي]\`\n` +
-            `🔹 \`تعديل هجوم [النص الجديد]\``);
+    else if (cmd === 'حالة الألعاب' || cmd === 'ألعاب') {
+        await message.reply(`🎮 **قائمة الألعاب والحالات الفخمة للبروفايل:**\n\n` +
+            `استخدم الأوامر التالية لتغيير مظهرك فوراً:\n` +
+            `🔹 \لعبة فالورانت\` -> \`لعبة Valorant\`\n` +
+            `🔹 \`لعبة فورتنايت\` -> \`لعبة Fortnite\`\n` +
+            `🔹 \`لعبة ماينكرافت\` -> \`لعبة Minecraft\`\n` +
+            `🔹 \`لعبة روبلوكس\` -> \`لعبة Roblox\`\n` +
+            `🔹 \`سبوتيفاي أم كلثوم\` -> \`تشغيل أغنية أم كلثوم (أمل حياتي)\`\n` +
+            `🔹 \`سبوتيفاي [اسم الأغنية] - [اسم الفنان]\` -> مخصص بالكامل\n` +
+            `*(مثال: \`سبوتيفاي يامسهرني - أم كلثوم\`)*`);
+    }
+    else if (cmd === 'لعبة فالورانت') {
+        setPresenceActivity('game', 'Valorant');
+        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Valorant**");
+    }
+    else if (cmd === 'لعبة فورتنايت') {
+        setPresenceActivity('game', 'Fortnite');
+        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Fortnite**");
+    }
+    else if (cmd === 'لعبة ماينكرافت') {
+        setPresenceActivity('game', 'Minecraft');
+        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Minecraft**");
+    }
+    else if (cmd === 'لعبة روبلوكس') {
+        setPresenceActivity('game', 'Roblox');
+        await message.reply("🎮 تم تغيير حالتك في البروفايل إلى: **Playing Roblox**");
+    }
+    else if (cmd === 'سبوتيفاي أم كلثوم' || cmd === 'سبوتيفاي ام كلثوم') {
+        setPresenceActivity('spotify', 'أمل حياتي', 'أم كلثوم');
+        await message.reply("🎵 تم تشغيل سبوتيفاي في بروفايلك: **Listening to أم كلثوم - أمل حياتي**");
+    }
+    else if (text.startsWith("سبوتيفاي ")) {
+        const spotifyArgs = text.replace("سبوتيفاي", "").trim();
+        const splitSong = spotifyArgs.split("-");
+        if (splitSong.length >= 2) {
+            const songName = splitSong[0].trim();
+            const artistName = splitSong[1].trim();
+            setPresenceActivity('spotify', songName, artistName);
+            await message.reply(`🎵 تم تحديث سبوتيفاي: **Listening to ${artistName} - ${songName}**`);
+        } else {
+            await message.reply("❌ الصيغة غير صحيحة. استخدم: `سبوتيفاي اسم الأغنية - اسم الفنان`");
+        }
     }
     else if (cmd === 'تشغيل') {
         isBotRunning = true;
@@ -355,7 +429,7 @@ client.on('messageCreate', async (message) => {
         const targetChannelId = parts[2];
 
         if (!count || !targetChannelId) {
-            await message.reply("❌ الصيغة غير صحيحة. استخدم: `مسح [العدد] [آيدي_الروم]` (مثال: `مسح 5 1503150255594799205`)");
+            await message.reply("❌ الصيغة غير صحيحة. استخدم: `مسح [العدد] [آيدي_الروم]`");
             return;
         }
 
@@ -390,7 +464,7 @@ client.on('messageCreate', async (message) => {
     else if (cmd === 'حالة') {
         await message.reply(`📊 **تقرير الحالة والإحصائيات الشامل:**\n` +
             `- الحالة العامة: ${isBotRunning ? '🟢 يعمل' : '🔴 متوقف'}\n` +
-            `- الكتابة التلقائية: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}\n` +
+            `- الكتابة التلقائية: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}\n`+
             `- الصوت (التافيك): ${isVoiceActive ? '🟢 متصل' : '🔴 مفصول'}\n` +
             `- الخطة باء (كل 2.5 ث): ${isPlanBRunning ? '🟢 نشطة' : '🔴 متوقفة'}\n` +
             `- إجمالي الرسائل المرسلة: \`${stats.totalSent}\` رسالة\n` +
@@ -398,67 +472,7 @@ client.on('messageCreate', async (message) => {
             `- نشاط البخشيش: \`${stats.task2CountLog}\` مرة\n` +
             `- نشاط العمل والجريمة: \`${stats.task3CountLog}\` مرة\n` +
             `- نشاط الخطة باء: \`${stats.planBCountLog}\` رسالة مرسلة\n` +
-            `- آخر وقت نشاط: \`${stats.lastActiveTime}\`\n\n` +
-            `⚙️ ** الرومات الحالية:**\n` +
-            `- روم الصوت: \`${config.afkChannelId}\`\n` +
-            `- روم الذكريات: \`${config.task1Channel}\` (${config.task1Msg})\n` +
-            `- روم البخشيش: \`${config.task2Channel}\` (${config.task2Msg})\n` +
-            `- روم العمل: \`${config.task3Channel}\`\n` +
-            `- روم الهجوم: \`${config.task4Channel}\` (${config.task4Msg})\n` +
-            `- روم الخطة باء: \`${config.planBChannel}\``);
-    }
-    else if (text.startsWith("تعديل صوت")) {
-        const rawId = text.replace("تعديل صوت", "").trim().replace(/[\[\]]/g, "");
-        if (rawId) {
-            config.afkChannelId = rawId;
-            saveConfig();
-            connectToVoice(rawId);
-            await message.reply(`✅ تم تحديث ونقل روم الصوت (التافيك) وحفظه بنجاح إلى: \`${rawId}\``);
-        }
-    }
-    else if (text.startsWith("تعديل روم ذكريات") && parts[3]) {
-        config.task1Channel = parts[3].replace(/[\[\]]/g, "");
-        saveConfig();
-        await message.reply(`✅ تم تحديث روم الذكريات وحفظه إلى: \`${config.task1Channel}\``);
-    }
-    else if (text.startsWith("تعديل ذكريات")) {
-        const newVal = text.replace("تعديل ذكريات", "").trim();
-        if (newVal) {
-            config.task1Msg = newVal;
-            saveConfig();
-            await message.reply(`✅ تم تحديث نص الذكريات وحفظه إلى: \`${newVal}\``);
-        }
-    }
-    else if (text.startsWith("تعديل روم بخشيش") && parts[3]) {
-        config.task2Channel = parts[3].replace(/[\[\]]/g, "");
-        saveConfig();
-        await message.reply(`✅ تم تحديث روم البخشيش وحفظه إلى: \`${config.task2Channel}\``);
-    }
-    else if (text.startsWith("تعديل بخشيش")) {
-        const newVal = text.replace("تعديل بخشيش", "").trim();
-        if (newVal) {
-            config.task2Msg = newVal;
-            saveConfig();
-            await message.reply(`✅ تم تحديث نص البخشيش وحفظه إلى: \`${newVal}\``);
-        }
-    }
-    else if (text.startsWith("تعديل روم عمل") && parts[3]) {
-        config.task3Channel = parts[3].replace(/[\[\]]/g, "");
-        saveConfig();
-        await message.reply(`✅ تم تحديث روم العمل وحفظه إلى: \`${config.task3Channel}\``);
-    }
-    else if (text.startsWith("تعديل روم هجوم") && parts[3]) {
-        config.task4Channel = parts[3].replace(/[\[\]]/g, "");
-        saveConfig();
-        await message.reply(`✅ تم تحديث روم الهجوم وحفظه إلى: \`${config.task4Channel}\``);
-    }
-    else if (text.startsWith("تعديل هجوم")) {
-        const newVal = text.replace("تعديل هجوم", "").trim();
-        if (newVal) {
-            config.task4Msg = newVal;
-            saveConfig();
-            await message.reply(`✅ تم تحديث نص الهجوم وحفظه إلى: \`${newVal}\``);
-        }
+            `- آخر وقت نشاط: \`${stats.lastActiveTime}\``);
     }
 });
 
