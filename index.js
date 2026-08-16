@@ -1,16 +1,15 @@
 require('./keep_alive.js');
-const { Client, MessageActionRow, MessageButton } = require('discord.js-selfbot-v13');
-const { joinVoiceChannel } = require('@discordjs/voice');
+const { Client } = require('discord.js-selfbot-v13');
+const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 
 const client = new Client();
 
-// --- الإعدادات والذاكرة الحية (تستطيع تعديلها بالكامل من الأوامر أدناه) ---
+// --- الإعدادات والذاكرة الحية ---
 let config = {
     guildId: process.env.GUILD_ID,
     afkChannelId: process.env.AFK_CHANNEL_ID,
     controlChannelId: "1538406310327091260",
     
-    // المهام والرسائل والرومات الخاصة بها
     task1Channel: "1507460885583626351",
     task1Msg: "!ذكريات",
     task1Count: 10,
@@ -103,11 +102,18 @@ const runTask4 = () => {
     queueMessage(config.task4Channel, config.task4Msg);
 };
 
+// دالة الاتصال الصوتي مع قطع الاتصال القديم أولاً (إصلاح مشكلة التافيك)
 const connectToVoice = () => {
     if (!isBotRunning || !isVoiceActive || !config.guildId || !config.afkChannelId) return;
     const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
     try {
+        // قطع الاتصال القديم إن وجد لمنع التعليق
+        const existingConnection = getVoiceConnection(guild.id);
+        if (existingConnection) {
+            existingConnection.destroy();
+        }
+
         joinVoiceChannel({
             channelId: config.afkChannelId,
             guildId: guild.id,
@@ -115,7 +121,8 @@ const connectToVoice = () => {
             selfMute: true,
             selfDeaf: false
         });
-    } catch (e) { console.error(e); }
+        console.log(`🔊 تم الاتصال بالروم الصوتي بنجاح: ${config.afkChannelId}`);
+    } catch (e) { console.error("❌ خطأ في الاتصال الصوتي:", e); }
 };
 
 const scheduleNextTask = (taskFn, minMin, maxMin) => {
@@ -145,113 +152,85 @@ client.on('ready', async () => {
     scheduleNextTask(runTask4, 26, 34);
 });
 
-// --- واجهة الأزرار التفاعلية ---
-client.on('messageCreate', async (message) => {
-    if (message.author.id !== client.user.id || message.channel.id !== config.controlChannelId) return;
-
-    const content = message.content.trim().toLowerCase();
-
-    if (content === 'اوامر' || content === 'لوحة') {
-        const row1 = new MessageActionRow()
-            .addComponents(
-                new MessageButton().setCustomId('btn_start').setLabel('تشغيل البوت').setStyle('SUCCESS'),
-                new MessageButton().setCustomId('btn_stop').setLabel('ايقاف البوت').setStyle('DANGER'),
-                new MessageButton().setCustomId('btn_status').setLabel('حالة البوت').setStyle('SECONDARY')
-            );
-
-        const row2 = new MessageActionRow()
-            .addComponents(
-                new MessageButton().setCustomId('btn_toggle_chat').setLabel('ايقاف الكتابة التلقائية').setStyle('PRIMARY'),
-                new MessageButton().setCustomId('btn_toggle_voice').setLabel('ايقاف الصوت').setStyle('PRIMARY'),
-                new MessageButton().setCustomId('btn_settings').setLabel('عرض الإعدادات').setStyle('SECONDARY')
-            );
-
-        await message.reply({
-            content: `🎛️ **لوحة التحكم الرئيسية**\nاختر أحد الخيارات أدناه أو اكتب \`تعليمات\` لمعرفة طريقة تعديل الرومات والرسائل:`,
-            components: [row1, row2]
-        });
-    }
-    else if (content === 'تعليمات') {
-        await message.reply(`📜 **طريقة تعديل الرومات والرسائل طيران (بدون كود):**\n\n` +
-            `🔹 **لتعديل روم الصوت:** \`تعديل صوت [الايدي]\`\n` +
-            `🔹 **لتعديل روم الذكريات:** \`تعديل روم ذكريات [الايدي]\`\n` +
-            `🔹 **لتعديل نص الذكريات:** \`تعديل ذكريات [النص]\`\n` +
-            `🔹 **لتعديل روم البخشيش:** \`تعديل روم بخشيش [الايدي]\`\n` +
-            `🔹 **لتعديل نص البخشيش:** \`تعديل بخشيش [النص]\`\n` +
-            `🔹 **لتعديل روم العمل والجريمة:** \`تعديل روم عمل [الايدي]\`\n` +
-            `🔹 **لتعديل روم الهجوم:** \`تعديل روم هجوم [الايدي]\`\n` +
-            `🔹 **لتعديل نص الهجوم:** \`تعديل هجوم [النص الجديد]\``);
-    }
-});
-
-// التعامل مع الأزرار
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-    if (interaction.channelId !== config.controlChannelId) return;
-
-    if (interaction.customId === 'btn_stop') {
-        isBotRunning = false;
-        await interaction.reply({ content: "🔴 تم ايقاف البوت بالكامل.", ephemeral: false });
-    } 
-    else if (interaction.customId === 'btn_start') {
-        isBotRunning = true;
-        isChatActive = true;
-        isVoiceActive = true;
-        connectToVoice();
-        await interaction.reply({ content: "🟢 تم تشغيل البوت واستعادة كافة الوظائف.", ephemeral: false });
-    } 
-    else if (interaction.customId === 'btn_toggle_chat') {
-        isChatActive = !isChatActive;
-        await interaction.reply({ content: `⚠️ حالة الكتابة أصبحت: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}`, ephemeral: false });
-    } 
-    else if (interaction.customId === 'btn_toggle_voice') {
-        isVoiceActive = !isVoiceActive;
-        if(isVoiceActive) connectToVoice();
-        await interaction.reply({ content: `⚠️ حالة الصوت أصبحت: ${isVoiceActive ? '🟢 متصل' : '🔴 مفصول'}`, ephemeral: false });
-    } 
-    else if (interaction.customId === 'btn_status') {
-        await interaction.reply({
-            content: `📊 **حالة البوت الحالية:**\n` +
-                `- الحالة العامة: ${isBotRunning ? '🟢 يعمل' : '🔴 متوقف'}\n` +
-                `- الكتابة التلقائية: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}\n` +
-                `- الصوت: ${isVoiceActive ? '🟢 متصل' : '🔴 مفصول'}`,
-            ephemeral: false
-        });
-    }
-    else if (interaction.customId === 'btn_settings') {
-        await interaction.reply({
-            content: `⚙️ **الإعدادات الحالية:**\n` +
-                `- روم الصوت: \`${config.afkChannelId}\`\n` +
-                `- روم الذكريات: \`${config.task1Channel}\` (الرسالة: ${config.task1Msg})\n` +
-                `- روم البخشيش: \`${config.task2Channel}\` (الرسالة: ${config.task2Msg})\n` +
-                `- روم العمل: \`${config.task3Channel}\`\n` +
-                `- روم الهجوم: \`${config.task4Channel}\` (الرسالة: ${config.task4Msg})\n` +
-                `*(اكتب \`تعليمات\` لمعرفة كيفية التعديل)*`,
-            ephemeral: false
-        });
-    }
-});
-
-// --- نظام الأوامر النصية لتعديل جميع الرومات والرسائل طيران بدون همزات أو شرطات ---
+// --- نظام التحكم النصي المطور والسريع (بدون أزرار وبدون همزات) ---
 client.on('messageCreate', async (message) => {
     if (message.author.id !== client.user.id || message.channel.id !== config.controlChannelId) return;
     
     const text = message.content.trim();
     const parts = text.split(" ");
-    const cmd = parts[0] + " " + (parts[1] || ""); // دمج أول كلمتين للتحقق من الأمر
+    const cmd = text.toLowerCase();
 
-    // 1. تعديل روم الصوت
-    if (text.startsWith("تعديل صوت") && parts[2]) {
+    // 1. القائمة الرئيسية والأوامر
+    if (cmd === 'اوامر' || cmd === 'لوحة') {
+        await message.reply(`🎛️ **لوحة التحكم السريعة:**\n\n` +
+            `🔹 \`تشغيل\` - تشغيل البوت بالكامل\n` +
+            `🔹 \`ايقاف\` - ايقاف البوت بالكامل\n` +
+            `🔹 \`ايقاف كتابة\` - ايقاف الرسائل التلقائية\n` +
+            `🔹 \`ايقاف صوت\` - ايقاف التافيك الصوتي\n` +
+            `🔹 \`حالة\` - عرض الحالة الحالية والإعدادات\n` +
+            `🔹 \`تعليمات\` - معرفة طريقة تعديل الرومات والرسائل طيران`);
+    }
+    else if (cmd === 'تعليمات') {
+        await message.reply(`📜 **طريقة تعديل الرومات والرسائل فوراً طيران:**\n\n` +
+            `🔹 \`تعديل صوت [الايدي]\`\n` +
+            `🔹 \`تعديل روم ذكريات [الايدي]\`\n` +
+            `🔹 \`تعديل ذكريات [النص الجديد]\`\n` +
+            `🔹 \`تعديل روم بخشيش [الايدي]\`\n` +
+            `🔹 \`تعديل بخشيش [النص الجديد]\`\n` +
+            `🔹 \`تعديل روم عمل [الايدي]\`\n` +
+            `🔹 \`تعديل روم هجوم [الايدي]\`\n` +
+            `🔹 \`تعديل هجوم [النص الجديد]\``);
+    }
+    // 2. التحكم بالحالة
+    else if (cmd === 'تشغيل') {
+        isBotRunning = true;
+        isChatActive = true;
+        isVoiceActive = true;
+        connectToVoice();
+        await message.reply("🟢 تم تشغيل البوت واستعادة كافة الوظائف.");
+    }
+    else if (cmd === 'ايقاف') {
+        isBotRunning = false;
+        const conn = getVoiceConnection(config.guildId);
+        if (conn) conn.destroy();
+        await message.reply("🔴 تم ايقاف البوت بالكامل وفصل الصوت.");
+    }
+    else if (cmd === 'ايقاف كتابة') {
+        isChatActive = !isChatActive;
+        await message.reply(`⚠️ حالة الكتابة أصبحت: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}`);
+    }
+    else if (cmd === 'ايقاف صوت') {
+        isVoiceActive = !isVoiceActive;
+        if (isVoiceActive) {
+            connectToVoice();
+            await message.reply("🟢 تم تفعيل الصوت والاتصال بالروم.");
+        } else {
+            const conn = getVoiceConnection(config.guildId);
+            if (conn) conn.destroy();
+            await message.reply("🔴 تم فصل الصوت وإيقافه.");
+        }
+    }
+    else if (cmd === 'حالة') {
+        await message.reply(`📊 **حالة الإعدادات والرومات الحالية:**\n` +
+            `- الحالة العامة: ${isBotRunning ? '🟢 يعمل' : '🔴 متوقف'}\n` +
+            `- الكتابة التلقائية: ${isChatActive ? '🟢 مفعلة' : '🔴 متوقفة'}\n` +
+            `- الصوت (التافيك): ${isVoiceActive ? '🟢 متصل' : '🔴 مفصول'}\n` +
+            `- روم الصوت الحالي: \`${config.afkChannelId}\`\n` +
+            `- روم الذكريات: \`${config.task1Channel}\` (${config.task1Msg})\n` +
+            `- روم البخشيش: \`${config.task2Channel}\` (${config.task2Msg})\n` +
+            `- روم العمل: \`${config.task3Channel}\`\n` +
+            `- روم الهجوم: \`${config.task4Channel}\` (${config.task4Msg})`);
+    }
+    // 3. التعديلات الفورية للرومات والرسائل طيران
+    else if (text.startsWith("تعديل صوت") && parts[2]) {
         config.afkChannelId = parts[2];
         connectToVoice();
-        await message.reply(`✅ تم تحديث روم الصوت إلى: \`${parts[2]}\``);
+        await message.reply(`✅ تم تحديث ونقل روم الصوت (التافيك) بنجاح إلى: \`${parts[2]}\``);
     }
-    // 2. تعديل روم الذكريات
     else if (text.startsWith("تعديل روم ذكريات") && parts[3]) {
         config.task1Channel = parts[3];
         await message.reply(`✅ تم تحديث روم الذكريات إلى: \`${parts[3]}\``);
     }
-    // 3. تعديل نص الذكريات
     else if (text.startsWith("تعديل ذكريات")) {
         const newVal = text.replace("تعديل ذكريات", "").trim();
         if (newVal) {
@@ -259,12 +238,10 @@ client.on('messageCreate', async (message) => {
             await message.reply(`✅ تم تحديث نص الذكريات إلى: \`${newVal}\``);
         }
     }
-    // 4. تعديل روم البخشيش
     else if (text.startsWith("تعديل روم بخشيش") && parts[3]) {
         config.task2Channel = parts[3];
         await message.reply(`✅ تم تحديث روم البخشيش إلى: \`${parts[3]}\``);
     }
-    // 5. تعديل نص البخشيش
     else if (text.startsWith("تعديل بخشيش")) {
         const newVal = text.replace("تعديل بخشيش", "").trim();
         if (newVal) {
@@ -272,17 +249,14 @@ client.on('messageCreate', async (message) => {
             await message.reply(`✅ تم تحديث نص البخشيش إلى: \`${newVal}\``);
         }
     }
-    // 6. تعديل روم العمل والجريمة
     else if (text.startsWith("تعديل روم عمل") && parts[3]) {
         config.task3Channel = parts[3];
         await message.reply(`✅ تم تحديث روم العمل إلى: \`${parts[3]}\``);
     }
-    // 7. تعديل روم الهجوم
     else if (text.startsWith("تعديل روم هجوم") && parts[3]) {
         config.task4Channel = parts[3];
         await message.reply(`✅ تم تحديث روم الهجوم إلى: \`${parts[3]}\``);
     }
-    // 8. تعديل نص الهجوم
     else if (text.startsWith("تعديل هجوم")) {
         const newVal = text.replace("تعديل هجوم", "").trim();
         if (newVal) {
