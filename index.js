@@ -28,7 +28,7 @@ const processQueue = async () => {
         } catch (error) {
             console.error(`❌ خطأ في إرسال الرسالة إلى الروم ${task.channelId}:`, error);
         }
-        await wait(2000); // الفاصل العام بين أي رسالة وأخرى في البوت
+        await wait(2000); // الفاصل العام للأوامر الأخرى
     }
     isProcessingQueue = false;
 };
@@ -38,11 +38,21 @@ const queueMessage = (channelId, content) => {
     processQueue();
 };
 
-// --- المهام ---
+// --- المهام (مع تصحيح توقيت الـ 4 ثوانٍ للذكريات) ---
 const runTask1 = async () => {
     for (let i = 0; i < 10; i++) {
-        queueMessage("1507460885583626351", "!ذكريات");
-        await wait(4000); // 4 ثوانٍ لكل رسالة ذكريات
+        try {
+            const channel = await client.channels.fetch("1507460885583626351");
+            if (channel && channel.isText()) {
+                await channel.send("!ذكريات");
+                console.log(`📨 تم إرسال (!ذكريات) - رسالة رقم ${i + 1}`);
+            }
+        } catch (error) {
+            console.error("❌ خطأ في إرسال ذكريات:", error);
+        }
+        if (i < 9) { // لا داعي للانتظار بعد آخر رسالة
+            await wait(4000); // انتظار 4 ثوانٍ حقيقية بين الرسالة والرسالة
+        }
     }
 };
 
