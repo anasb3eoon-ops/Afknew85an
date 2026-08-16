@@ -102,26 +102,33 @@ const runTask4 = () => {
     queueMessage(config.task4Channel, config.task4Msg);
 };
 
-// دالة الاتصال الصوتي مع قطع الاتصال القديم أولاً (إصلاح مشكلة التافيك)
-const connectToVoice = () => {
-    if (!isBotRunning || !isVoiceActive || !config.guildId || !config.afkChannelId) return;
+// دالة الاتصال الصوتي المحدثة والمضمونة 100% للانتقال الفوري
+const connectToVoice = (targetChannelId = null) => {
+    if (!isBotRunning || !isVoiceActive || !config.guildId) return;
+    
+    // إذا تم تمرير روم جديد نعتبره الأساس، وإلا نأخذ المخزن في الذاكرة
+    const channelToJoin = targetChannelId || config.afkChannelId;
+    if (!channelToJoin) return;
+
     const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
+
     try {
-        // قطع الاتصال القديم إن وجد لمنع التعليق
+        // قطع الاتصال القديم فوراً وبشكل جذري لمنع التعليق
         const existingConnection = getVoiceConnection(guild.id);
         if (existingConnection) {
             existingConnection.destroy();
         }
 
+        // إنشاء اتصال جديد بالروم المحدد
         joinVoiceChannel({
-            channelId: config.afkChannelId,
+            channelId: channelToJoin,
             guildId: guild.id,
             adapterCreator: guild.voiceAdapterCreator,
             selfMute: true,
             selfDeaf: false
         });
-        console.log(`🔊 تم الاتصال بالروم الصوتي بنجاح: ${config.afkChannelId}`);
+        console.log(`🔊 تم الانتقال والاتصال بالروم الصوتي بنجاح: ${channelToJoin}`);
     } catch (e) { console.error("❌ خطأ في الاتصال الصوتي:", e); }
 };
 
@@ -152,7 +159,7 @@ client.on('ready', async () => {
     scheduleNextTask(runTask4, 26, 34);
 });
 
-// --- نظام التحكم النصي المطور والسريع (بدون أزرار وبدون همزات) ---
+// --- نظام التحكم النصي المطور ---
 client.on('messageCreate', async (message) => {
     if (message.author.id !== client.user.id || message.channel.id !== config.controlChannelId) return;
     
@@ -160,7 +167,6 @@ client.on('messageCreate', async (message) => {
     const parts = text.split(" ");
     const cmd = text.toLowerCase();
 
-    // 1. القائمة الرئيسية والأوامر
     if (cmd === 'اوامر' || cmd === 'لوحة') {
         await message.reply(`🎛️ **لوحة التحكم السريعة:**\n\n` +
             `🔹 \`تشغيل\` - تشغيل البوت بالكامل\n` +
@@ -181,7 +187,6 @@ client.on('messageCreate', async (message) => {
             `🔹 \`تعديل روم هجوم [الايدي]\`\n` +
             `🔹 \`تعديل هجوم [النص الجديد]\``);
     }
-    // 2. التحكم بالحالة
     else if (cmd === 'تشغيل') {
         isBotRunning = true;
         isChatActive = true;
@@ -221,10 +226,10 @@ client.on('messageCreate', async (message) => {
             `- روم العمل: \`${config.task3Channel}\`\n` +
             `- روم الهجوم: \`${config.task4Channel}\` (${config.task4Msg})`);
     }
-    // 3. التعديلات الفورية للرومات والرسائل طيران
+    // تعديل روم الصوت والانتقال إليه فوراً
     else if (text.startsWith("تعديل صوت") && parts[2]) {
-        config.afkChannelId = parts[2];
-        connectToVoice();
+        config.afkChannelId = parts[2]; // تحديث في الذاكرة الحية
+        connectToVoice(parts[2]); // إجبار البوت على الانتقال فوراً للروم الجديد
         await message.reply(`✅ تم تحديث ونقل روم الصوت (التافيك) بنجاح إلى: \`${parts[2]}\``);
     }
     else if (text.startsWith("تعديل روم ذكريات") && parts[3]) {
