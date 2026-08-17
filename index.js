@@ -338,20 +338,31 @@ const scheduleNextTask = (taskFn, minMin, maxMin) => {
     setTimeout(runAndSchedule, initialTime);
 };
 
-const isAlertTarget = (message) => {
-    if (!config.alertEnabled || message.author.bot) return false;
+const isAlertTarget = async (message) => {
+    if (!config.alertEnabled) return false;
+    if (!message || !message.author || message.author.bot) return false;
+    if (message.author.id === client.user.id) return false;
+    if (message.mentions && message.mentions.everyone) return false;
     if (!message.guild || !message.guild.id) return false;
     if (!config.alertGuildIds.includes(String(message.guild.id))) return false;
-    if (!message.mentions || !message.mentions.users) return false;
-    if (message.mentions.users.has(client.user.id)) return true;
+
+    const isUserMention = !!(message.mentions && message.mentions.users && message.mentions.users.has(client.user.id));
+    if (isUserMention) return true;
+
     if (message.reference && message.reference.messageId) {
-        return true;
+        try {
+            const replied = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+            if (replied && replied.author && replied.author.id === client.user.id) return true;
+        } catch (e) {
+            return false;
+        }
     }
+
     return false;
 };
 
 const sendMentionAlert = async (message) => {
-    if (!isAlertTarget(message)) return;
+    if (!(await isAlertTarget(message))) return;
     try {
         const channel = await client.channels.fetch(config.controlChannelId).catch(() => null);
         if (!channel) return;
@@ -359,11 +370,12 @@ const sendMentionAlert = async (message) => {
         const guildName = message.guild ? message.guild.name : 'DM';
         const channelName = message.channel ? message.channel.name : 'unknown';
         const preview = (message.content || '').replace(/\s+/g, ' ').trim();
+        const cause = (message.mentions && message.mentions.users && message.mentions.users.has(client.user.id)) ? 'تاغ لاسمك' : 'رد على رسالتك';
         const text = `🔔 تنبيه جديد\n` +
             `- شخص: ${authorTag}\n` +
             `- سيرفر: ${guildName}\n` +
             `- روم: ${channelName}\n` +
-            `- تاغ/رد: ${message.mentions && message.mentions.users && message.mentions.users.has(client.user.id) ? 'تاغ' : 'رد'}\n` +
+            `- السبب: ${cause}\n` +
             `- الرسالة: ${preview || 'لا يوجد نص'}`;
         await channel.send(text);
     } catch (e) {
