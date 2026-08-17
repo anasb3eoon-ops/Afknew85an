@@ -410,35 +410,18 @@ client.on('messageCreate', async (message) => {
     const reply = (content) => message.reply(content).catch(() => {});
     const isValidId = (value) => typeof value === 'string' && /^\d{5,20}$/.test(value);
 
-    if (lower === 'شرح' || lower === 'اوامر' || lower === 'لوحة' || lower === 'help') {
+    if (lower === 'اوامر' || lower === 'لوحة' || lower === 'help') {
         return reply(
-            '📘 شرح سريع:\n' +
-            '• هذا البوت يتحكم من خلال محادثة خاصة أو مجموعة خاصة بك\n' +
-            '• لا يحتاج موقع\n' +
-            '• كل شيء يتم داخل الروم control\n' +
-            '🧩 أوامر سريعة:\n' +
             '• تشغيل\n' +
             '• ايقاف\n' +
-            '• ايقاف صوت\n' +
-            '• ايقاف كتابة\n' +
             '• حالة\n' +
             '• اشعار\n' +
             '• اشعار سيرفر 123456789\n' +
-            '• اشعار قائمة\n' +
             '• ايقاف ارسال 123456789\n' +
             '• تشغيل ارسال 123456789\n' +
-            '• ارسال متوقف\n' +
+            '• قنوات\n' +
             '• الخطة باء\n' +
             '• ايقاف الخطة باء\n' +
-            '• قنوات\n' +
-            '• تعديل\n' +
-            '• تعديل قناة 1 123456789\n' +
-            '• تعديل رسالة 1 مرحبا\n' +
-            '• تعديل عدد 1 10\n' +
-            '• تعديل مؤقت مخصص 6000\n' +
-            '• تشغيل مخصصة\n' +
-            '• ايقاف مخصصة\n' +
-            '• مسح 20 123456789\n' +
             '• لعبة Valorant\n' +
             '• سبوتيفاي song - artist'
         );
@@ -522,10 +505,6 @@ client.on('messageCreate', async (message) => {
         return reply(`✅ تم حذف السيرفر ${guildId} من الاشعارات.`);
     }
 
-    if (lower === 'اشعار قائمة') {
-        return reply(`📋 السيرفرات المراقبة: ${config.alertGuildIds.length ? config.alertGuildIds.join(' | ') : 'لا يوجد'}`);
-    }
-
     if (text.startsWith('ايقاف ارسال ') || text.startsWith('توقيف ارسال ') || text.startsWith('وقف ارسال ')) {
         const value = text.replace(/^(ايقاف ارسال|توقيف ارسال|وقف ارسال)\s+/i, '').trim();
         if (!isValidId(value)) return reply('❌ الصيغة: ايقاف ارسال [آيدي_الروم]');
@@ -546,7 +525,7 @@ client.on('messageCreate', async (message) => {
         return reply(`▶️ تم تفعيل الإرسال في الروم ${value}.`);
     }
 
-    if (lower === 'ارسال متوقف' || lower === 'قائمة ارسال') {
+    if (lower === 'رومات موقفه' || lower === 'ارسال متوقف' || lower === 'قائمة ارسال') {
         return reply(`📋 الرومات الموقوفة: ${config.disabledSendChannels.length ? config.disabledSendChannels.join(' | ') : 'لا يوجد'}`);
     }
 
@@ -565,32 +544,25 @@ client.on('messageCreate', async (message) => {
     if (lower === 'قنوات' || lower === 'التشانل' || lower === 'ق') {
         return reply(
             '📋 القنوات الحالية:\n' +
-            `- task1 : ${config.task1Channel}\n` +
-            `- task2 : ${config.task2Channel}\n` +
-            `- task3 : ${config.task3Channel}\n` +
-            `- task4 : ${config.task4Channel}\n` +
-            `- planB : ${config.planBChannel}\n` +
             `- afk : ${config.afkChannelId}\n` +
-            `- control : ${config.controlChannelId}\n` +
-            `- custom : ${config.customTaskChannel}\n` +
-            `- custom list : ${config.customTaskChannels.join(' | ')}`
+            '- تعديل التافيك الايدي 123456789\n' +
+            '- ايقاف ارسال 123456789\n' +
+            '- تشغيل ارسال 123456789\n' +
+            '- رومات موقفه'
         );
     }
 
-    if (lower === 'تعديل') {
-        return reply(
-            '🛠️ تعديل القنوات/الرسائل:\n' +
-            '• تعديل قناة 1 123456789\n' +
-            '• تعديل قناة afk 123456789\n' +
-            '• تعديل قناة custom 123456789\n' +
-            '• تعديل رسالة 1 مرحبا\n' +
-            '• تعديل رسالة custom مرحبا\n' +
-            '• تعديل عدد 1 10\n' +
-            '• تعديل مؤقت مخصص 6000\n' +
-            '• تعديل قائمة مخصصة 123 | 456 | 789\n' +
-            '• تشغيل مخصصة\n' +
-            '• ايقاف مخصصة'
-        );
+    if (text.startsWith('تعديل التافيك الايدي ')) {
+        const value = text.replace('تعديل التافيك الايدي ', '').trim();
+        if (!isValidId(value)) return reply('❌ الصيغة: تعديل التافيك الايدي [آيدي_الروم]');
+        config.afkChannelId = value;
+        saveConfig();
+        if (isBotRunning && isVoiceActive) {
+            const conn = getVoiceConnection(config.guildId);
+            if (conn) conn.destroy();
+            setTimeout(() => connectToVoice(value), 300);
+        }
+        return reply(`✅ تم تحديث روم التافيك إلى ${value}`);
     }
 
     if (text.startsWith('تعديل قناة ')) {
@@ -614,6 +586,13 @@ client.on('messageCreate', async (message) => {
         const field = map[key.toLowerCase()] || map[key] || map[key.toLowerCase()];
         if (!field) return reply('❌ المفتاح غير معروف. استخدم 1/2/3/4/ب/afk/control/custom');
         config[field] = value;
+        if (field === 'afkChannelId') {
+            if (isBotRunning && isVoiceActive) {
+                const conn = getVoiceConnection(config.guildId);
+                if (conn) conn.destroy();
+                setTimeout(() => connectToVoice(value), 300);
+            }
+        }
         if (field === 'customTaskChannel') config.customTaskChannels = [value];
         saveConfig();
         return reply(`✅ تم تحديث ${field} إلى ${value}`);
