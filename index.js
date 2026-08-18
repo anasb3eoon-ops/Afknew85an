@@ -309,7 +309,13 @@ const sendChannelMessage = async (channelId, messageText, label) => {
     if (!channelId || !messageText) return false;
     try {
         const channel = client.channels.cache.get(channelId);
-        if (!channel || !channel.isTextBased()) return false;
+        const isTextChannel = channel && (
+            channel.type === 'GUILD_TEXT' ||
+            channel.type === 'DM' ||
+            channel.type === 'GUILD_NEWS' ||
+            typeof channel.send === 'function'
+        );
+        if (!isTextChannel) return false;
         await channel.send(messageText);
         stats.totalSent += 1;
         stats.lastActiveTime = new Date().toLocaleString('ar-SA');
@@ -540,7 +546,13 @@ const startCustomRooms = () => {
             if (customRoomIntervals[i] >= room.interval) {
                 try {
                     const channel = client.channels.cache.get(room.channelId);
-                    if (channel && channel.isTextBased()) {
+                    const isTextChannel = channel && (
+                        channel.type === 'GUILD_TEXT' ||
+                        channel.type === 'DM' ||
+                        channel.type === 'GUILD_NEWS' ||
+                        typeof channel.send === 'function'
+                    );
+                    if (channel && isTextChannel) {
                         await channel.send(room.message);
                         stats.totalSent++;
                         stats.lastActiveTime = new Date().toLocaleString('ar-SA');
