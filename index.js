@@ -132,8 +132,11 @@ const saveConfig = () => {
 let isChatActive = true;
 let isVoiceActive = true;
 let isBotRunning = true;
+let isTaskRunning = true;
 let planBInterval = null;
 let isPlanBRunning = false;
+let mainTaskLoop = null;
+let task3Index = 0;
 
 let stats = {
     totalSent: 0,
@@ -153,6 +156,7 @@ const syncState = () => {
         isChatActive,
         isVoiceActive,
         isPlanBRunning,
+        isTaskRunning,
         stats,
         config: profileView
     });
@@ -200,8 +204,16 @@ global.botEmitter.on('control', (action) => {
         }
     } else if (action === 'chat') {
         isChatActive = !isChatActive;
+    } else if (action === 'tasks') {
+        isTaskRunning = !isTaskRunning;
+        if (isTaskRunning) {
+            startTaskLoops();
+        }
     } else if (action === 'planb') {
         isPlanBRunning = !isPlanBRunning;
+        if (isPlanBRunning) {
+            startPlanBLoop();
+        }
     }
     syncState();
 });
@@ -288,89 +300,66 @@ const replyChatStatus = () => {
         `🔹 البوت: ${isBotRunning ? 'مفعّل' : 'موقف'}`,
         `🔹 الصوت: ${isVoiceActive ? 'مفعّل' : 'موقف'}`,
         `🔹 الكتابة: ${isChatActive ? 'مفعّلة' : 'موقفة'}`,
+        `🔹 المهام: ${isTaskRunning ? 'مفعّلة' : 'موقفة'}`,
         `🔹 الخطة ب: ${isPlanBRunning ? 'مفعّلة' : 'موقفة'}`
     ].join('\n');
 };
 
-const handleChatCommand = async (message) => {
-    if (!message || !message.content) return;
-    if (message.author.id !== client.user.id) return;
-
-    const content = message.content.trim();
-    const lower = content.toLowerCase();
-    const isOff = lower.includes('off') || lower.includes('ايقاف') || lower.includes('قف') || lower.includes('stop');
-    const isOn = lower.includes('on') || lower.includes('تشغيل') || lower.includes('start');
-
-    let command = content.toLowerCase();
-    command = command.replace(/\s+/g, ' ').trim();
-
-    if (command === '!status' || command === 'حالة' || command === 'status') {
-        await message.reply(replyChatStatus());
-        return;
+const sendChannelMessage = async (channelId, messageText, label) => {
+    if (!channelId || !messageText) return false;
+    try {
+        const channel = client.channels.cache.get(channelId);
+        if (!channel || !channel.isTextBased()) return false;
+        await channel.send(messageText);
+        stats.totalSent += 1;
+        stats.lastActiveTime = new Date().toLocaleString('ar-SA');
+        console.log(`✅ ${label}: ${channelId}`);
+        return true;
+    } catch (e) {
+        console.error(`❌ ${label}: ${channelId} - ${e.message}`);
+        return false;
     }
+};
 
-    if (command === '!stop' || command === '!off' || command === 'ايقاف' || command === 'ايقاف تشغيل' || command === 'stop' || command === 'off') {
-        isBotRunning = false;
-        const conn = getVoiceConnection(config.guildId);
-        if (conn) conn.destroy();
-        syncState();
-        await message.reply('⏹️ تم إيقاف البوت بالكامل');
-        return;
-    }
+const startPlanBLoop = () => {
+    if (planBInterval) clearInterval(planBInterval);
+    if (!isPlanBRunning) return;
 
-    if (command === '!start' || command === '!on' || command === 'تشغيل' || command === 'start' || command === 'on') {
-        isBotRunning = true;
-        syncState();
-        await message.reply('▶️ تم تشغيل البوت');
-        return;
-    }
+    planBInterval = setInterval(async () => {
+        if (!isBotRunning || !isChatActive || !isPlanBRunning) return;
+        await sendChannelMessage(config.planBChannel, config.planBMsg, 'خطة ب');
+        stats.planBCountLog += 1;
+    }, 15000);
+};
 
-    if (command === '!voice off' || command === '!ايقاف صوت' || command === '!ايقاف_صوت' || command === 'ايقاف صوت' || command === 'voice off' || command === 'صوت off') {
-        isVoiceActive = false;
-        const conn = getVoiceConnection(config.guildId);
-        if (conn) conn.destroy();
-        syncState();
-        await message.reply('🔇 تم إيقاف الصوت');
-        return;
-    }
+const startTaskLoops = () => {
+    if (mainTaskLoop) clearInterval(mainTaskLoop);
 
-    if (command === '!voice on' || command === '!تشغيل صوت' || command === '!تشغيل_صوت' || command === 'تشغيل صوت' || command === 'voice on' || command === 'صوت on') {
-        isVoiceActive = true;
-        connectToVoice();
-        syncState();
-        await message.reply('🔊 تم تشغيل الصوت');
-        return;
-    }
+    mainTaskLoop = setInterval(async () => {
+        if (!isBotRunning || !isChatActive || !isTaskRunning) return;
 
-    if (command === '!chat off' || command === '!ايقاف كتابة' || command === '!ايقاف_كتابة' || command === 'ايقاف كتابة' || command === 'chat off' || command === 'كتابة off') {
-        isChatActive = false;
-        syncState();
-        await message.reply('📝 تم إيقاف الكتابة');
-        return;
-    }
+        if (config.task1Channel && config.task1Msg) {
+            await sendChannelMessage(config.task1Channel, config.task1Msg, 'مهمة 1');
+            stats.task1CountLog += 1;
+        }
 
-    if (command === '!chat on' || command === '!تشغيل كتابة' || command === '!تشغيل_كتابة' || command === 'تشغيل كتابة' || command === 'chat on' || command === 'كتابة on') {
-        isChatActive = true;
-        syncState();
-        await message.reply('📝 تم تشغيل الكتابة');
-        return;
-    }
+        if (config.task2Channel && config.task2Msg) {
+            await sendChannelMessage(config.task2Channel, config.task2Msg, 'مهمة 2');
+            stats.task2CountLog += 1;
+        }
 
-    if (lower.includes('ايقاف') && lower.includes('صوت')) {
-        isVoiceActive = false;
-        const conn = getVoiceConnection(config.guildId);
-        if (conn) conn.destroy();
-        syncState();
-        await message.reply('🔇 تم إيقاف الصوت');
-        return;
-    }
+        if (config.task3Channel && Array.isArray(config.task3Msgs) && config.task3Msgs.length > 0) {
+            const msg = config.task3Msgs[task3Index % config.task3Msgs.length];
+            await sendChannelMessage(config.task3Channel, msg, 'مهمة 3');
+            stats.task3CountLog += 1;
+            task3Index += 1;
+        }
 
-    if (lower.includes('ايقاف') && lower.includes('كتابة')) {
-        isChatActive = false;
-        syncState();
-        await message.reply('📝 تم إيقاف الكتابة');
-        return;
-    }
+        if (config.task4Channel && config.task4Msg) {
+            await sendChannelMessage(config.task4Channel, config.task4Msg, 'مهمة 4');
+            stats.task4CountLog += 1;
+        }
+    }, 8000);
 };
 
 global.botEmitter.on('addAccount', (accountData) => {
@@ -421,6 +410,8 @@ global.botEmitter.on('deleteAccount', (accountId) => {
 client.on('ready', () => {
     console.log(`✅ تم تسجيل الدخول: ${client.user.tag}`);
     connectToVoice();
+    startTaskLoops();
+    startPlanBLoop();
     syncState();
     setInterval(syncState, 5000);
     
@@ -429,8 +420,7 @@ client.on('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
-    if (!message || !message.content) return;
-    if (message.author.id !== client.user.id) return;
+    if (!message || !message.content || message.author.id !== client.user.id) return;
 
     const text = message.content.trim();
     const command = text.toLowerCase();
@@ -442,6 +432,8 @@ client.on('messageCreate', async (message) => {
 
     if (command === '!stop' || command === '!off' || command === 'ايقاف' || command === 'ايقاف تشغيل' || command === 'stop' || command === 'off') {
         isBotRunning = false;
+        isTaskRunning = false;
+        isVoiceActive = false;
         const conn = getVoiceConnection(config.guildId);
         if (conn) conn.destroy();
         syncState();
@@ -451,6 +443,10 @@ client.on('messageCreate', async (message) => {
 
     if (command === '!start' || command === '!on' || command === 'تشغيل' || command === 'start' || command === 'on') {
         isBotRunning = true;
+        isTaskRunning = true;
+        isVoiceActive = true;
+        connectToVoice();
+        startTaskLoops();
         syncState();
         await message.reply('▶️ تم تشغيل البوت');
         return;
@@ -485,6 +481,41 @@ client.on('messageCreate', async (message) => {
         syncState();
         await message.reply('📝 تم تشغيل الكتابة');
         return;
+    }
+
+    if (command === '!tasks off' || command === '!ايقاف مهام' || command === 'ايقاف مهام') {
+        isTaskRunning = false;
+        syncState();
+        await message.reply('🛑 تم إيقاف المهام');
+        return;
+    }
+
+    if (command === '!tasks on' || command === '!تشغيل مهام' || command === 'تشغيل مهام') {
+        isTaskRunning = true;
+        startTaskLoops();
+        syncState();
+        await message.reply('▶️ تم تشغيل المهام');
+        return;
+    }
+
+    if (command === '!planb off' || command === '!ايقاف خطة ب' || command === 'ايقاف خطة ب') {
+        isPlanBRunning = false;
+        if (planBInterval) clearInterval(planBInterval);
+        syncState();
+        await message.reply('🛑 تم إيقاف خطة ب');
+        return;
+    }
+
+    if (command === '!planb on' || command === '!تشغيل خطة ب' || command === 'تشغيل خطة ب') {
+        isPlanBRunning = true;
+        startPlanBLoop();
+        syncState();
+        await message.reply('▶️ تم تشغيل خطة ب');
+        return;
+    }
+
+    if (command === '!help' || command === 'اوامر' || command === 'commands') {
+        await message.reply('الأوامر المتاحة:\n!status\n!stop\n!start\n!voice off\n!voice on\n!chat off\n!chat on\n!tasks off\n!tasks on\n!planb off\n!planb on');
     }
 });
 

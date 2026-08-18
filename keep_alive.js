@@ -10,6 +10,7 @@ let botState = {
     isRunning: true,
     isChatActive: true,
     isVoiceActive: true,
+    isTaskRunning: true,
     isPlanBRunning: false,
     stats: {},
     config: {}
@@ -434,6 +435,10 @@ app.get('/', (req, res) => {
                             <span>الكتابة: ${botState.isChatActive ? 'مفعلة ✓' : 'معطلة ✗'}</span>
                         </div>
                         <div class="status-indicator">
+                            <span class="status-dot ${botState.isTaskRunning ? 'active' : 'inactive'}"></span>
+                            <span>المهام: ${botState.isTaskRunning ? 'مفعلة ✓' : 'متوقفة ✗'}</span>
+                        </div>
+                        <div class="status-indicator">
                             <span class="status-dot ${botState.isPlanBRunning ? 'active' : 'inactive'}"></span>
                             <span>الخطة ب: ${botState.isPlanBRunning ? 'مشغلة ✓' : 'متوقفة ✗'}</span>
                         </div>
@@ -458,13 +463,19 @@ app.get('/', (req, res) => {
                             <span class="status-badge ${botState.isChatActive ? 'status-on' : 'status-off'}">${botState.isChatActive ? 'مفعلة' : 'معطلة'}</span>
                         </div>
                         <div class="stat-item">
-                            <span>الخطة ب (Spam)</span>
+                            <span>المهام الأساسية</span>
+                            <span class="status-badge ${botState.isTaskRunning ? 'status-on' : 'status-off'}">${botState.isTaskRunning ? 'مفعلة' : 'متوقفة'}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span>الخطة ب</span>
                             <span class="status-badge ${botState.isPlanBRunning ? 'status-on' : 'status-off'}">${botState.isPlanBRunning ? 'مشغلة' : 'متوقفة'}</span>
                         </div>
                         <div class="btn-group">
                             <a href="/api/toggle/bot" class="btn ${botState.isRunning ? 'btn-danger' : 'btn-success'}">${botState.isRunning ? '⏹ إيقاف كامل' : '▶ تشغيل كامل'}</a>
                             <a href="/api/toggle/voice" class="btn btn-primary">${botState.isVoiceActive ? '🔇 إيقاف صوت' : '🔊 تشغيل صوت'}</a>
                             <a href="/api/toggle/chat" class="btn btn-warning">${botState.isChatActive ? '🔇 إيقاف كتابة' : '📝 تشغيل كتابة'}</a>
+                            <a href="/api/toggle/tasks" class="btn btn-success">${botState.isTaskRunning ? '⏹ إيقاف المهام' : '▶ تشغيل المهام'}</a>
+                            <a href="/api/toggle/planb" class="btn btn-warning">${botState.isPlanBRunning ? '⏹ إيقاف خطة ب' : '▶ تشغيل خطة ب'}</a>
                         </div>
                     </div>
 
@@ -698,7 +709,6 @@ app.get('/', (req, res) => {
 // APIs التحكم
 app.get('/api/toggle/:action', (req, res) => {
     const action = req.params.action;
-    const event = require('events');
     if (global.botEmitter) {
         global.botEmitter.emit('control', action);
     }
