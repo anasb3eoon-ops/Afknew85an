@@ -9,11 +9,17 @@ global.botEmitter = new EventEmitter();
 const client = new Client();
 const CONFIG_FILE = './bot_config.json';
 
-let config = {
-    guildId: process.env.GUILD_ID || "",
-    afkChannelId: process.env.AFK_CHANNEL_ID || "1496645738086531194",
-    controlChannelId: process.env.CONTROL_CHANNEL_ID || "1538406310327091260",
-    targetGuildId: process.env.TARGET_GUILD_ID || "1264561928034975775",
+const accountColors = ['#a89f9e', '#7a9b5a', '#8c7a68', '#5d7087', '#8d6d5f', '#7d5f95', '#77856d'];
+
+const createDefaultAccount = (index = 1, preset = {}) => ({
+    id: `account-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: preset.name || `الحساب ${index}`,
+    token: preset.token || process.env.token || "",
+    color: preset.color || accountColors[(index - 1) % accountColors.length],
+    isPrimary: index === 1,
+    guildId: preset.guildId || process.env.GUILD_ID || "",
+    afkChannelId: preset.afkChannelId || process.env.AFK_CHANNEL_ID || "1496645738086531194",
+    targetGuildId: preset.targetGuildId || process.env.TARGET_GUILD_ID || "1264561928034975775",
 
     alertEnabled: false,
     alertGuildIds: [],
@@ -35,25 +41,89 @@ let config = {
     planBChannel: "1503150255594799205",
     planBMsg: "يا شباب جمعو نقاط",
 
+    customRooms: [],
+
     customTaskEnabled: false,
     customTaskChannels: ["1503150255594799205"],
     customTaskChannel: "1503150255594799205",
     customTaskMsg: "مرحبا شباب",
     customTaskIntervalMs: 6000
+});
+
+let config = {
+    primaryAccountId: "",
+    activeAccountId: "",
+    accounts: []
+};
+
+const getActiveAccount = () => {
+    if (!Array.isArray(config.accounts) || config.accounts.length === 0) {
+        config.accounts = [createDefaultAccount(1)];
+    }
+
+    if (!config.primaryAccountId && config.accounts[0]) {
+        config.primaryAccountId = config.accounts[0].id;
+        config.accounts[0].isPrimary = true;
+    }
+
+    const selected = config.accounts.find(account => account.id === config.activeAccountId);
+    if (selected) return selected;
+
+    const primary = config.accounts.find(account => account.id === config.primaryAccountId) || config.accounts[0];
+    config.activeAccountId = primary.id;
+    return primary;
+};
+
+const syncActiveConfig = () => {
+    const active = getActiveAccount();
+    config.primaryAccountId = config.accounts[0]?.id || config.primaryAccountId || active.id;
+    config.accounts = config.accounts.map((account, index) => {
+        const normalized = { ...account };
+        normalized.isPrimary = account.id === config.primaryAccountId || index === 0;
+        normalized.color = normalized.color || accountColors[index % accountColors.length];
+        if (normalized.isPrimary) config.primaryAccountId = normalized.id;
+        return normalized;
+    });
+    Object.keys(active).forEach(key => {
+        if (key !== 'id' && key !== 'name') config[key] = active[key];
+    });
+    config.activeAccountId = active.id;
 };
 
 if (fs.existsSync(CONFIG_FILE)) {
     try {
         const savedData = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        config = { ...config, ...savedData };
+        config = {
+            ...config,
+            ...savedData,
+            accounts: Array.isArray(savedData.accounts) && savedData.accounts.length > 0 ? savedData.accounts : [createDefaultAccount(1)]
+        };
     } catch (e) {
         console.error("❌ خطأ قراءة الملف:", e);
     }
 }
 
+if (!Array.isArray(config.accounts) || config.accounts.length === 0) {
+    config.accounts = [createDefaultAccount(1)];
+}
+if (!config.primaryAccountId) {
+    config.primaryAccountId = config.accounts[0].id;
+    config.accounts[0].isPrimary = true;
+}
+if (!config.activeAccountId || !config.accounts.some(account => account.id === config.activeAccountId)) {
+    config.activeAccountId = config.primaryAccountId || config.accounts[0].id;
+}
+syncActiveConfig();
+
 const saveConfig = () => {
     try {
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+        const payload = {
+            primaryAccountId: config.primaryAccountId,
+            activeAccountId: config.activeAccountId,
+            accounts: config.accounts.map(account => ({ ...account }))
+        };
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(payload, null, 2), 'utf8');
+        syncActiveConfig();
     } catch (e) {
         console.error("❌ خطأ حفظ الملف:", e);
     }
@@ -76,13 +146,15 @@ let stats = {
 };
 
 const syncState = () => {
+    const active = getActiveAccount();
+    const profileView = { ...config, ...active, activeAccountId: config.activeAccountId, accounts: config.accounts };
     keepAlive.updateBotState({
         isRunning: isBotRunning,
         isChatActive,
         isVoiceActive,
         isPlanBRunning,
         stats,
-        config
+        config: profileView
     });
 };
 
@@ -126,6 +198,8 @@ global.botEmitter.on('control', (action) => {
             const conn = getVoiceConnection(config.guildId);
             if (conn) conn.destroy();
         }
+    } else if (action === 'chat') {
+        isChatActive = !isChatActive;
     } else if (action === 'planb') {
         isPlanBRunning = !isPlanBRunning;
     }
@@ -134,7 +208,30 @@ global.botEmitter.on('control', (action) => {
 
 global.botEmitter.on('updateConfig', (newCfg) => {
     if (newCfg.afkChannelId) config.afkChannelId = newCfg.afkChannelId;
-    if (newCfg.controlChannelId) config.controlChannelId = newCfg.controlChannelId;
+    if (newCfg.targetGuildId) config.targetGuildId = newCfg.targetGuildId;
+    saveConfig();
+    syncState();
+});
+
+global.botEmitter.on('updateTasksConfig', (newCfg) => {
+    const active = getActiveAccount();
+    if (newCfg.token) active.token = newCfg.token;
+    if (newCfg.guildId) active.guildId = newCfg.guildId;
+    if (newCfg.afkChannelId) active.afkChannelId = newCfg.afkChannelId;
+    if (newCfg.targetGuildId) active.targetGuildId = newCfg.targetGuildId;
+    if (newCfg.task1Channel) active.task1Channel = newCfg.task1Channel;
+    if (newCfg.task1Msg) active.task1Msg = newCfg.task1Msg;
+    if (newCfg.task1Count) active.task1Count = parseInt(newCfg.task1Count) || 10;
+    if (newCfg.task2Channel) active.task2Channel = newCfg.task2Channel;
+    if (newCfg.task2Msg) active.task2Msg = newCfg.task2Msg;
+    if (newCfg.task3Channel) active.task3Channel = newCfg.task3Channel;
+    if (newCfg.task3Msgs) active.task3Msgs = Array.isArray(newCfg.task3Msgs) ? newCfg.task3Msgs : String(newCfg.task3Msgs).split(',').map(item => item.trim());
+    if (newCfg.task4Channel) active.task4Channel = newCfg.task4Channel;
+    if (newCfg.task4Msg) active.task4Msg = newCfg.task4Msg;
+    if (newCfg.planBChannel) active.planBChannel = newCfg.planBChannel;
+    if (newCfg.planBMsg) active.planBMsg = newCfg.planBMsg;
+    if (newCfg.name) active.name = newCfg.name;
+    Object.assign(config, active);
     saveConfig();
     syncState();
 });
@@ -148,12 +245,289 @@ global.botEmitter.on('updatePresence', (gameName) => {
     }
 });
 
+global.botEmitter.on('addCustomRoom', (roomData) => {
+    const active = getActiveAccount();
+    const newRoom = {
+        channelId: roomData.channelId,
+        message: roomData.message,
+        interval: roomData.interval,
+        active: true
+    };
+    active.customRooms.push(newRoom);
+    Object.assign(config, active);
+    saveConfig();
+    syncState();
+    console.log(`✅ تمت إضافة روم مخصص جديد في القناة: ${roomData.channelId}`);
+});
+
+global.botEmitter.on('deleteCustomRoom', (roomIdx) => {
+    const active = getActiveAccount();
+    if (active.customRooms[roomIdx]) {
+        active.customRooms.splice(roomIdx, 1);
+        delete customRoomIntervals[roomIdx];
+        Object.assign(config, active);
+        saveConfig();
+        syncState();
+        console.log(`✅ تم حذف الروم المخصص #${roomIdx + 1}`);
+    }
+});
+
+global.botEmitter.on('toggleCustomRoom', (roomIdx) => {
+    const active = getActiveAccount();
+    if (active.customRooms[roomIdx]) {
+        active.customRooms[roomIdx].active = !active.customRooms[roomIdx].active;
+        Object.assign(config, active);
+        saveConfig();
+        syncState();
+        console.log(`✅ تم ${active.customRooms[roomIdx].active ? 'تشغيل' : 'إيقاف'} الروم المخصص #${roomIdx + 1}`);
+    }
+});
+
+const replyChatStatus = () => {
+    return [
+        `🔹 البوت: ${isBotRunning ? 'مفعّل' : 'موقف'}`,
+        `🔹 الصوت: ${isVoiceActive ? 'مفعّل' : 'موقف'}`,
+        `🔹 الكتابة: ${isChatActive ? 'مفعّلة' : 'موقفة'}`,
+        `🔹 الخطة ب: ${isPlanBRunning ? 'مفعّلة' : 'موقفة'}`
+    ].join('\n');
+};
+
+const handleChatCommand = async (message) => {
+    if (!message || !message.content) return;
+    if (message.author.id !== client.user.id) return;
+
+    const content = message.content.trim();
+    const lower = content.toLowerCase();
+    const isOff = lower.includes('off') || lower.includes('ايقاف') || lower.includes('قف') || lower.includes('stop');
+    const isOn = lower.includes('on') || lower.includes('تشغيل') || lower.includes('start');
+
+    let command = content.toLowerCase();
+    command = command.replace(/\s+/g, ' ').trim();
+
+    if (command === '!status' || command === 'حالة' || command === 'status') {
+        await message.reply(replyChatStatus());
+        return;
+    }
+
+    if (command === '!stop' || command === '!off' || command === 'ايقاف' || command === 'ايقاف تشغيل' || command === 'stop' || command === 'off') {
+        isBotRunning = false;
+        const conn = getVoiceConnection(config.guildId);
+        if (conn) conn.destroy();
+        syncState();
+        await message.reply('⏹️ تم إيقاف البوت بالكامل');
+        return;
+    }
+
+    if (command === '!start' || command === '!on' || command === 'تشغيل' || command === 'start' || command === 'on') {
+        isBotRunning = true;
+        syncState();
+        await message.reply('▶️ تم تشغيل البوت');
+        return;
+    }
+
+    if (command === '!voice off' || command === '!ايقاف صوت' || command === '!ايقاف_صوت' || command === 'ايقاف صوت' || command === 'voice off' || command === 'صوت off') {
+        isVoiceActive = false;
+        const conn = getVoiceConnection(config.guildId);
+        if (conn) conn.destroy();
+        syncState();
+        await message.reply('🔇 تم إيقاف الصوت');
+        return;
+    }
+
+    if (command === '!voice on' || command === '!تشغيل صوت' || command === '!تشغيل_صوت' || command === 'تشغيل صوت' || command === 'voice on' || command === 'صوت on') {
+        isVoiceActive = true;
+        connectToVoice();
+        syncState();
+        await message.reply('🔊 تم تشغيل الصوت');
+        return;
+    }
+
+    if (command === '!chat off' || command === '!ايقاف كتابة' || command === '!ايقاف_كتابة' || command === 'ايقاف كتابة' || command === 'chat off' || command === 'كتابة off') {
+        isChatActive = false;
+        syncState();
+        await message.reply('📝 تم إيقاف الكتابة');
+        return;
+    }
+
+    if (command === '!chat on' || command === '!تشغيل كتابة' || command === '!تشغيل_كتابة' || command === 'تشغيل كتابة' || command === 'chat on' || command === 'كتابة on') {
+        isChatActive = true;
+        syncState();
+        await message.reply('📝 تم تشغيل الكتابة');
+        return;
+    }
+
+    if (lower.includes('ايقاف') && lower.includes('صوت')) {
+        isVoiceActive = false;
+        const conn = getVoiceConnection(config.guildId);
+        if (conn) conn.destroy();
+        syncState();
+        await message.reply('🔇 تم إيقاف الصوت');
+        return;
+    }
+
+    if (lower.includes('ايقاف') && lower.includes('كتابة')) {
+        isChatActive = false;
+        syncState();
+        await message.reply('📝 تم إيقاف الكتابة');
+        return;
+    }
+};
+
+global.botEmitter.on('addAccount', (accountData) => {
+    const newAccount = createDefaultAccount(config.accounts.length + 1, {
+        name: accountData?.name || `الحساب ${config.accounts.length + 1}`,
+        token: accountData?.token || '',
+        guildId: accountData?.guildId || '',
+        afkChannelId: accountData?.afkChannelId || '',
+        targetGuildId: accountData?.targetGuildId || '',
+        color: accountData?.color || accountColors[config.accounts.length % accountColors.length]
+    });
+    newAccount.isPrimary = false;
+    config.accounts.push(newAccount);
+    config.activeAccountId = newAccount.id;
+    if (!config.primaryAccountId) config.primaryAccountId = config.accounts[0].id;
+    syncActiveConfig();
+    saveConfig();
+    syncState();
+    console.log(`✅ تم إضافة حساب جديد: ${newAccount.name}`);
+});
+
+global.botEmitter.on('selectAccount', (accountId) => {
+    if (!config.accounts.some(account => account.id === accountId)) return;
+    config.activeAccountId = accountId;
+    syncActiveConfig();
+    saveConfig();
+    syncState();
+    console.log(`✅ تم اختيار الحساب: ${getActiveAccount().name}`);
+});
+
+global.botEmitter.on('deleteAccount', (accountId) => {
+    if (config.accounts.length <= 1) {
+        console.log('⚠️ لا يمكن حذف الحساب الأخير');
+        return;
+    }
+    const deletedPrimary = config.accounts.find(account => account.id === accountId && account.isPrimary);
+    config.accounts = config.accounts.filter(account => account.id !== accountId);
+    if (deletedPrimary) {
+        config.primaryAccountId = config.accounts[0].id;
+    }
+    config.activeAccountId = config.primaryAccountId || config.accounts[0].id;
+    syncActiveConfig();
+    saveConfig();
+    syncState();
+    console.log('✅ تم حذف الحساب');
+});
+
 client.on('ready', () => {
     console.log(`✅ تم تسجيل الدخول: ${client.user.tag}`);
     connectToVoice();
     syncState();
     setInterval(syncState, 5000);
+    
+    // بدء تشغيل الـ Custom Rooms
+    startCustomRooms();
 });
+
+client.on('messageCreate', async (message) => {
+    if (!message || !message.content) return;
+    if (message.author.id !== client.user.id) return;
+
+    const text = message.content.trim();
+    const command = text.toLowerCase();
+
+    if (command === '!status' || command === 'حالة' || command === 'status') {
+        await message.reply(replyChatStatus());
+        return;
+    }
+
+    if (command === '!stop' || command === '!off' || command === 'ايقاف' || command === 'ايقاف تشغيل' || command === 'stop' || command === 'off') {
+        isBotRunning = false;
+        const conn = getVoiceConnection(config.guildId);
+        if (conn) conn.destroy();
+        syncState();
+        await message.reply('⏹️ تم إيقاف البوت بالكامل');
+        return;
+    }
+
+    if (command === '!start' || command === '!on' || command === 'تشغيل' || command === 'start' || command === 'on') {
+        isBotRunning = true;
+        syncState();
+        await message.reply('▶️ تم تشغيل البوت');
+        return;
+    }
+
+    if (command === '!voice off' || command === '!ايقاف صوت' || command === 'ايقاف صوت' || command === 'voice off') {
+        isVoiceActive = false;
+        const conn = getVoiceConnection(config.guildId);
+        if (conn) conn.destroy();
+        syncState();
+        await message.reply('🔇 تم إيقاف الصوت');
+        return;
+    }
+
+    if (command === '!voice on' || command === '!تشغيل صوت' || command === 'تشغيل صوت' || command === 'voice on') {
+        isVoiceActive = true;
+        connectToVoice();
+        syncState();
+        await message.reply('🔊 تم تشغيل الصوت');
+        return;
+    }
+
+    if (command === '!chat off' || command === '!ايقاف كتابة' || command === 'ايقاف كتابة' || command === 'chat off') {
+        isChatActive = false;
+        syncState();
+        await message.reply('📝 تم إيقاف الكتابة');
+        return;
+    }
+
+    if (command === '!chat on' || command === '!تشغيل كتابة' || command === 'تشغيل كتابة' || command === 'chat on') {
+        isChatActive = true;
+        syncState();
+        await message.reply('📝 تم تشغيل الكتابة');
+        return;
+    }
+});
+
+const customRoomIntervals = {};
+
+const startCustomRooms = () => {
+    // إنشء interval لكل روم مخصص
+    const checkCustomRooms = async () => {
+        if (!isBotRunning || !isChatActive) return;
+        
+        for (let i = 0; i < config.customRooms.length; i++) {
+            const room = config.customRooms[i];
+            if (!room || !room.active) continue;
+            
+            if (!customRoomIntervals[i]) {
+                customRoomIntervals[i] = 0;
+            }
+            
+            customRoomIntervals[i]++;
+            
+            // إذا وصلنا للوقت المحدد، أرسل الرسالة
+            if (customRoomIntervals[i] >= room.interval) {
+                try {
+                    const channel = client.channels.cache.get(room.channelId);
+                    if (channel && channel.isTextBased()) {
+                        await channel.send(room.message);
+                        stats.totalSent++;
+                        stats.lastActiveTime = new Date().toLocaleString('ar-SA');
+                        console.log(`✅ تم إرسال رسالة من روم مخصص: ${room.channelId}`);
+                    }
+                } catch (e) {
+                    console.error(`❌ خطأ إرسال رسالة في روم مخصص: ${room.channelId}`, e.message);
+                }
+                
+                // إعادة تعيين العداد
+                customRoomIntervals[i] = 0;
+            }
+        }
+    };
+    
+    // تحقق كل ثانية
+    setInterval(checkCustomRooms, 1000);
+};
 
 client.on('voiceStateUpdate', (oldState, newState) => {
     if (oldState.id !== client.user.id) return;
