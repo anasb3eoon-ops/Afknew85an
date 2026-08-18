@@ -284,6 +284,41 @@ global.botEmitter.on('deleteCustomRoom', (roomIdx) => {
     }
 });
 
+global.botEmitter.on('deleteMessages', async ({ channelId, count = 50 }) => {
+    const parsedCount = Math.min(Math.max(Number(count) || 50, 1), 100);
+
+    const result = (() => {
+        if (!channelId) {
+            return { success: false, message: '⚠️ يجب إدخال ID الروم' };
+        }
+
+        const channel = client.channels.cache.get(channelId);
+        if (!channel || !channel.messages || typeof channel.messages.fetch !== 'function') {
+            return { success: false, message: '⚠️ الروم غير موجود أو لا يدعم حذف الرسائل' };
+        }
+
+        return null;
+    })();
+
+    if (result) {
+        global.botEmitter.emit('deleteMessagesResult', result);
+        return;
+    }
+
+    try {
+        const channel = client.channels.cache.get(channelId);
+        const messages = await channel.messages.fetch({ limit: parsedCount });
+        const list = Array.from(messages.values());
+        for (let i = 0; i < list.length; i += 5) {
+            await Promise.all(list.slice(i, i + 5).map(msg => msg.delete().catch(() => {})));
+        }
+        const successResult = { success: true, message: `🗑️ تم حذف ${list.length} رسالة من الروم ${channelId}` };
+        global.botEmitter.emit('deleteMessagesResult', successResult);
+    } catch (e) {
+        global.botEmitter.emit('deleteMessagesResult', { success: false, message: `❌ خطأ حذف الرسائل: ${e.message}` });
+    }
+});
+
 global.botEmitter.on('toggleCustomRoom', (roomIdx) => {
     const active = getActiveAccount();
     if (active.customRooms[roomIdx]) {
@@ -458,6 +493,11 @@ const startTaskLoops = () => {
 
     if (!isBotRunning || !isChatActive || !isTaskRunning) return;
 
+    void runTask1Burst();
+    void runTask2();
+    void runTask3();
+    void runTask4();
+
     scheduleSingleTask('task1', runTask1Burst, 30 * 60 * 1000, 5 * 60 * 1000);
     scheduleSingleTask('task2', runTask2, 30 * 60 * 1000, 2 * 60 * 1000);
     scheduleSingleTask('task3', runTask3, 50 * 60 * 1000, 2 * 60 * 1000);
@@ -527,97 +567,165 @@ client.on('messageCreate', async (message) => {
     const text = message.content.trim();
     const command = text.toLowerCase();
 
+    const isReply = async (textReply) => {
+        await message.reply(textReply);
+    };
+
     if (command === '!status' || command === 'حالة' || command === 'status') {
-        await message.reply(replyChatStatus());
+        await isReply(replyChatStatus());
         return;
     }
 
     if (command === '!stop' || command === '!off' || command === 'ايقاف' || command === 'ايقاف تشغيل' || command === 'stop' || command === 'off') {
+        if (!isBotRunning) {
+            await isReply('⚠️ البوت متوقف بالفعل');
+            return;
+        }
         isBotRunning = false;
         isTaskRunning = false;
         isVoiceActive = false;
         const conn = getVoiceConnection(config.guildId);
         if (conn) conn.destroy();
         syncState();
-        await message.reply('⏹️ تم إيقاف البوت بالكامل');
+        await isReply('⏹️ تم إيقاف البوت بالكامل');
         return;
     }
 
     if (command === '!start' || command === '!on' || command === 'تشغيل' || command === 'start' || command === 'on') {
+        if (isBotRunning) {
+            await isReply('⚠️ البوت يعمل بالفعل');
+            return;
+        }
         isBotRunning = true;
         isTaskRunning = true;
         isVoiceActive = true;
         connectToVoice();
         startTaskLoops();
         syncState();
-        await message.reply('▶️ تم تشغيل البوت');
+        await isReply('▶️ تم تشغيل البوت');
         return;
     }
 
     if (command === '!voice off' || command === '!ايقاف صوت' || command === 'ايقاف صوت' || command === 'voice off') {
+        if (!isVoiceActive) {
+            await isReply('⚠️ الصوت متوقف بالفعل');
+            return;
+        }
         isVoiceActive = false;
         const conn = getVoiceConnection(config.guildId);
         if (conn) conn.destroy();
         syncState();
-        await message.reply('🔇 تم إيقاف الصوت');
+        await isReply('🔇 تم إيقاف الصوت');
         return;
     }
 
     if (command === '!voice on' || command === '!تشغيل صوت' || command === 'تشغيل صوت' || command === 'voice on') {
+        if (isVoiceActive) {
+            await isReply('⚠️ الصوت يعمل بالفعل');
+            return;
+        }
         isVoiceActive = true;
         connectToVoice();
         syncState();
-        await message.reply('🔊 تم تشغيل الصوت');
+        await isReply('🔊 تم تشغيل الصوت');
         return;
     }
 
     if (command === '!chat off' || command === '!ايقاف كتابة' || command === 'ايقاف كتابة' || command === 'chat off') {
+        if (!isChatActive) {
+            await isReply('⚠️ الكتابة متوقفة بالفعل');
+            return;
+        }
         isChatActive = false;
         syncState();
-        await message.reply('📝 تم إيقاف الكتابة');
+        await isReply('📝 تم إيقاف الكتابة');
         return;
     }
 
     if (command === '!chat on' || command === '!تشغيل كتابة' || command === 'تشغيل كتابة' || command === 'chat on') {
+        if (isChatActive) {
+            await isReply('⚠️ الكتابة مفعلة بالفعل');
+            return;
+        }
         isChatActive = true;
         syncState();
-        await message.reply('📝 تم تشغيل الكتابة');
+        await isReply('📝 تم تشغيل الكتابة');
         return;
     }
 
     if (command === '!tasks off' || command === '!ايقاف مهام' || command === 'ايقاف مهام') {
+        if (!isTaskRunning) {
+            await isReply('⚠️ المهام متوقفة بالفعل');
+            return;
+        }
         isTaskRunning = false;
         syncState();
-        await message.reply('🛑 تم إيقاف المهام');
+        await isReply('🛑 تم إيقاف المهام');
         return;
     }
 
     if (command === '!tasks on' || command === '!تشغيل مهام' || command === 'تشغيل مهام') {
+        if (isTaskRunning) {
+            await isReply('⚠️ المهام تعمل بالفعل');
+            return;
+        }
         isTaskRunning = true;
         startTaskLoops();
         syncState();
-        await message.reply('▶️ تم تشغيل المهام');
+        await isReply('▶️ تم تشغيل المهام');
         return;
     }
 
     if (command === '!planb off' || command === '!ايقاف خطة ب' || command === 'ايقاف خطة ب') {
+        if (!isPlanBRunning) {
+            await isReply('⚠️ خطة ب متوقفة بالفعل');
+            return;
+        }
         isPlanBRunning = false;
         if (planBInterval) clearInterval(planBInterval);
         syncState();
-        await message.reply('🛑 تم إيقاف خطة ب');
+        await isReply('🛑 تم إيقاف خطة ب');
         return;
     }
 
     if (command === '!planb on' || command === '!تشغيل خطة ب' || command === 'تشغيل خطة ب') {
+        if (isPlanBRunning) {
+            await isReply('⚠️ خطة ب تعمل بالفعل');
+            return;
+        }
         isPlanBRunning = true;
         startPlanBLoop();
         syncState();
-        await message.reply('▶️ تم تشغيل خطة ب');
+        await isReply('▶️ تم تشغيل خطة ب');
+        return;
+    }
+
+    if (command.startsWith('!delete ') || command.startsWith('!مسح ') || command.startsWith('مسح ')) {
+        const parts = text.split(/\s+/);
+        const count = Number(parts[1] || 50);
+        const channelId = parts[2] || null;
+        if (!channelId) {
+            await isReply('⚠️ التنسيق: !delete 50 123456789012345678');
+            return;
+        }
+
+        const channel = client.channels.cache.get(channelId);
+        if (!channel || !channel.messages || typeof channel.messages.fetch !== 'function') {
+            await isReply('⚠️ الروم غير موجود أو لا يدعم حذف الرسائل');
+            return;
+        }
+
+        const messages = await channel.messages.fetch({ limit: Math.min(Math.max(count, 1), 100) });
+        const deleted = Array.from(messages.values());
+        for (let i = 0; i < deleted.length; i += 5) {
+            await Promise.all(deleted.slice(i, i + 5).map(msg => msg.delete().catch(() => {})));
+        }
+        await isReply(`🗑️ تم حذف ${deleted.length} رسالة من الروم ${channelId}`);
         return;
     }
 
     if (command === '!help' || command === 'اوامر' || command === 'commands') {
-        await message.reply('الأوامر المتاحة:\n!status\n!stop\n!start\n!voice off\n!voice on\n!chat off\n!chat on\n!tasks off\n!tasks on\n!planb off\n!planb on');
+        await isReply('الأوامر المتاحة:\n!status\n!stop\n!start\n!voice off\n!voice on\n!chat off\n!chat on\n!tasks off\n!tasks on\n!planb off\n!planb on\n!delete 50 123456789012345678');
     }
 });
 

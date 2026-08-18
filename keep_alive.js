@@ -604,6 +604,20 @@ app.get('/', (req, res) => {
                 </div>
 
                 <div class="grid">
+                    <!-- حذف الرسائل -->
+                    <div class="card">
+                        <h3>🗑️ حذف الرسائل</h3>
+                        <div class="form-group">
+                            <label>🔧 ID الروم</label>
+                            <input type="text" id="deleteChannelId" placeholder="أدخل ID الروم" required>
+                        </div>
+                        <div class="form-group">
+                            <label>📨 عدد الرسائل</label>
+                            <input type="number" id="deleteMessageCount" placeholder="مثال: 50" min="1" max="100" value="50">
+                        </div>
+                        <button type="button" class="btn btn-danger" onclick="deleteMessages()" style="width: 100%;">🗑️ حذف الرسائل</button>
+                    </div>
+
                     <!-- الرومات المخصصة -->
                     <div class="card">
                         <h3>🎮 الرومات المخصصة (Custom Rooms)</h3>
@@ -701,6 +715,24 @@ app.get('/', (req, res) => {
                             .then(() => location.reload());
                     }
                 }
+
+                function deleteMessages() {
+                    const channelId = document.getElementById('deleteChannelId').value.trim();
+                    const count = document.getElementById('deleteMessageCount').value.trim();
+                    if (!channelId) {
+                        alert('❌ أدخل ID الروم أولاً');
+                        return;
+                    }
+                    fetch('/api/delete-messages', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ channelId, count: Number(count || 50) })
+                    }).then(async (res) => {
+                        const data = await res.json();
+                        alert(data.message || '✅ تم الحذف');
+                        if (data.success) location.reload();
+                    });
+                }
             </script>
         </html>
     `);
@@ -755,6 +787,24 @@ app.post('/api/delete-custom-room/:id', (req, res) => {
         global.botEmitter.emit('deleteCustomRoom', parseInt(req.params.id));
     }
     res.json({ success: true });
+});
+
+app.post('/api/delete-messages', async (req, res) => {
+    if (!global.botEmitter) {
+        return res.json({ success: false, message: '⚠️ البوت غير متاح' });
+    }
+
+    const payload = req.body || {};
+    const result = await new Promise((resolve) => {
+        const onDone = (data) => {
+            global.botEmitter.removeListener('deleteMessagesResult', onDone);
+            resolve(data);
+        };
+        global.botEmitter.on('deleteMessagesResult', onDone);
+        global.botEmitter.emit('deleteMessages', payload);
+    });
+
+    res.json(result || { success: false, message: '⚠️ لم يتم حذف الرسائل' });
 });
 
 app.get('/api/toggle-custom-room/:id', (req, res) => {
