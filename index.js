@@ -305,9 +305,27 @@ const replyChatStatus = () => {
     ].join('\n');
 };
 
+const MESSAGE_THROTTLE_MS = 2000;
+let lastMessageSentAt = 0;
+
+const waitForMessageThrottle = async () => {
+    const now = Date.now();
+    const elapsed = now - lastMessageSentAt;
+    if (elapsed >= MESSAGE_THROTTLE_MS) {
+        lastMessageSentAt = now;
+        return;
+    }
+
+    const waitMs = MESSAGE_THROTTLE_MS - elapsed;
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    lastMessageSentAt = Date.now();
+};
+
 const sendChannelMessage = async (channelId, messageText, label) => {
     if (!channelId || !messageText) return false;
     try {
+        await waitForMessageThrottle();
+
         const channel = client.channels.cache.get(channelId);
         const isTextChannel = channel && (
             channel.type === 'GUILD_TEXT' ||
@@ -316,6 +334,7 @@ const sendChannelMessage = async (channelId, messageText, label) => {
             typeof channel.send === 'function'
         );
         if (!isTextChannel) return false;
+
         await channel.send(messageText);
         stats.totalSent += 1;
         stats.lastActiveTime = new Date().toLocaleString('ar-SA');
@@ -327,6 +346,99 @@ const sendChannelMessage = async (channelId, messageText, label) => {
     }
 };
 
+const randomBetween = (minMs, maxMs) => Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+
+const scheduleSingleTask = (taskName, taskFn, baseMs, jitterMs) => {
+    const delay = baseMs + randomBetween(0, jitterMs);
+    const timerKey = `${taskName}Timer`;
+
+    if (taskName === 'task1') {
+        if (task1Timer) clearTimeout(task1Timer);
+        task1Timer = setTimeout(async () => {
+            if (!isBotRunning || !isChatActive || !isTaskRunning) {
+                scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+                return;
+            }
+            await taskFn();
+            scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+        }, delay);
+        return;
+    }
+
+    if (taskName === 'task2') {
+        if (task2Timer) clearTimeout(task2Timer);
+        task2Timer = setTimeout(async () => {
+            if (!isBotRunning || !isChatActive || !isTaskRunning) {
+                scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+                return;
+            }
+            await taskFn();
+            scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+        }, delay);
+        return;
+    }
+
+    if (taskName === 'task3') {
+        if (task3Timer) clearTimeout(task3Timer);
+        task3Timer = setTimeout(async () => {
+            if (!isBotRunning || !isChatActive || !isTaskRunning) {
+                scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+                return;
+            }
+            await taskFn();
+            scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+        }, delay);
+        return;
+    }
+
+    if (taskName === 'task4') {
+        if (task4Timer) clearTimeout(task4Timer);
+        task4Timer = setTimeout(async () => {
+            if (!isBotRunning || !isChatActive || !isTaskRunning) {
+                scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+                return;
+            }
+            await taskFn();
+            scheduleSingleTask(taskName, taskFn, baseMs, jitterMs);
+        }, delay);
+    }
+};
+
+let task1Timer = null;
+let task2Timer = null;
+let task3Timer = null;
+let task4Timer = null;
+
+const runTask1Burst = async () => {
+    if (!config.task1Channel || !config.task1Msg) return;
+    for (let i = 0; i < 8; i++) {
+        if (!isBotRunning || !isChatActive || !isTaskRunning) return;
+        await sendChannelMessage(config.task1Channel, config.task1Msg, 'مهمة 1');
+        stats.task1CountLog += 1;
+        if (i < 7) await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+};
+
+const runTask2 = async () => {
+    if (!config.task2Channel || !config.task2Msg) return;
+    await sendChannelMessage(config.task2Channel, config.task2Msg, 'مهمة 2');
+    stats.task2CountLog += 1;
+};
+
+const runTask3 = async () => {
+    if (!config.task3Channel || !Array.isArray(config.task3Msgs) || config.task3Msgs.length === 0) return;
+    const msg = config.task3Msgs[task3Index % config.task3Msgs.length];
+    await sendChannelMessage(config.task3Channel, msg, 'مهمة 3');
+    stats.task3CountLog += 1;
+    task3Index += 1;
+};
+
+const runTask4 = async () => {
+    if (!config.task4Channel || !config.task4Msg) return;
+    await sendChannelMessage(config.task4Channel, config.task4Msg, 'مهمة 4');
+    stats.task4CountLog += 1;
+};
+
 const startPlanBLoop = () => {
     if (planBInterval) clearInterval(planBInterval);
     if (!isPlanBRunning) return;
@@ -335,37 +447,21 @@ const startPlanBLoop = () => {
         if (!isBotRunning || !isChatActive || !isPlanBRunning) return;
         await sendChannelMessage(config.planBChannel, config.planBMsg, 'خطة ب');
         stats.planBCountLog += 1;
-    }, 15000);
+    }, 2500);
 };
 
 const startTaskLoops = () => {
-    if (mainTaskLoop) clearInterval(mainTaskLoop);
+    if (task1Timer) clearTimeout(task1Timer);
+    if (task2Timer) clearTimeout(task2Timer);
+    if (task3Timer) clearTimeout(task3Timer);
+    if (task4Timer) clearTimeout(task4Timer);
 
-    mainTaskLoop = setInterval(async () => {
-        if (!isBotRunning || !isChatActive || !isTaskRunning) return;
+    if (!isBotRunning || !isChatActive || !isTaskRunning) return;
 
-        if (config.task1Channel && config.task1Msg) {
-            await sendChannelMessage(config.task1Channel, config.task1Msg, 'مهمة 1');
-            stats.task1CountLog += 1;
-        }
-
-        if (config.task2Channel && config.task2Msg) {
-            await sendChannelMessage(config.task2Channel, config.task2Msg, 'مهمة 2');
-            stats.task2CountLog += 1;
-        }
-
-        if (config.task3Channel && Array.isArray(config.task3Msgs) && config.task3Msgs.length > 0) {
-            const msg = config.task3Msgs[task3Index % config.task3Msgs.length];
-            await sendChannelMessage(config.task3Channel, msg, 'مهمة 3');
-            stats.task3CountLog += 1;
-            task3Index += 1;
-        }
-
-        if (config.task4Channel && config.task4Msg) {
-            await sendChannelMessage(config.task4Channel, config.task4Msg, 'مهمة 4');
-            stats.task4CountLog += 1;
-        }
-    }, 8000);
+    scheduleSingleTask('task1', runTask1Burst, 30 * 60 * 1000, 5 * 60 * 1000);
+    scheduleSingleTask('task2', runTask2, 30 * 60 * 1000, 2 * 60 * 1000);
+    scheduleSingleTask('task3', runTask3, 50 * 60 * 1000, 2 * 60 * 1000);
+    scheduleSingleTask('task4', runTask4, 30 * 60 * 1000, 2 * 60 * 1000);
 };
 
 global.botEmitter.on('addAccount', (accountData) => {
